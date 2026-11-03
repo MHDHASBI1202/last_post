@@ -1,4 +1,5 @@
 import { hashSecret, isSameOrigin, randomSecret, sessionCookie, sessionToken, SESSION_DAYS, validateProfile } from "./security";
+import { gameAction, gameSnapshot } from "./survival";
 
 interface Env { DB: D1Database; ASSETS: Fetcher }
 type Profile = { id: string; user_id: string; code: string; name: string; role: string; specialty: string; activity: string; appearance: string; joined_day: number };
@@ -53,6 +54,7 @@ export default {
     const db = env.DB;
     if (!db) return json({ error: "Database markas belum dipasang. Pemilik perlu menjalankan panduan deploy." }, 503);
     try {
+      if (request.method === "GET" && url.pathname === "/api/game") return json(await gameSnapshot(db, await accountId(request, db)));
       if (request.method === "GET" && url.pathname === "/api/world") {
         const results = await db.batch([
           db.prepare("SELECT count(*) AS total FROM survivors"),
@@ -73,11 +75,12 @@ export default {
         return p ? json({ profile: publicProfile(p) }) : json({ error: "Kartu tidak ditemukan." }, 404);
       }
       if (request.method !== "POST") return json({ error: "Rute tidak ditemukan." }, 404);
-      if (!["/api/me", "/api/recover"].includes(url.pathname)) return json({ error: "Rute tidak ditemukan." }, 404);
+      if (!["/api/me", "/api/recover", "/api/game"].includes(url.pathname)) return json({ error: "Rute tidak ditemukan." }, 404);
       if (!isSameOrigin(request)) return json({ error: "Permintaan tidak dikenali." }, 403);
       let body: Record<string, unknown>;
       try { body = await bodyOf(request); } catch (e) { return json({ error: e instanceof Error ? e.message : "Data tidak valid." }, 400); }
       if (!await throttle(request, db, "write", 600)) return json({ error: "Terlalu banyak permintaan. Coba lagi satu jam lagi." }, 429);
+      if (url.pathname === "/api/game") return await gameAction(db, await accountId(request, db), body);
 
       if (url.pathname === "/api/recover") {
         if (!await throttle(request, db, "recover", 30)) return json({ error: "Batas pemulihan tercapai. Coba lagi satu jam lagi." }, 429);
@@ -95,6 +98,7 @@ export default {
       if (body.action === "activity" || body.action === "vote") {
         if (!p || !id) return json({ error: "Buat atau pulihkan kartu penyintas terlebih dulu." }, 401);
         if (body.action === "activity") {
+          if (await db.prepare("SELECT 1 FROM job_members WHERE user_id=? AND active=1").bind(id).first()) return json({ error: "Selesaikan kegiatan survivalmu sebelum mengganti aktivitas." }, 409);
           const activity = String(body.activity);
           if (!["jelajah", "jaga", "air", "istirahat"].includes(activity)) return json({ error: "Aktivitas tidak dikenal." }, 400);
           await db.prepare("UPDATE survivors SET activity=? WHERE user_id=?").bind(activity, id).run();

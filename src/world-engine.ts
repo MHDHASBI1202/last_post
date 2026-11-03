@@ -1,5 +1,6 @@
+import type { GameState } from "./survival-rules";
 export type Survivor = { id: string; name: string; role: string; activity: string; appearance: string; joinedDay: number };
-type Selection = { kind: 'house' | 'crate' | 'radio' | 'water' | 'plot' | 'survivor' | 'zombie'; id?: string; name: string };
+type Selection = { kind: 'house' | 'crate' | 'radio' | 'water' | 'plot' | 'survivor' | 'zombie' | 'wood' | 'loot'; id?: string; name: string };
 type Point = { x: number; y: number };
 type SceneItem = { x: number; y: number; depth: number; draw: () => void; selection?: Selection; hit?: { x: number; y: number; w: number; h: number } };
 type Tree = { x: number; y: number; size: number; variant: number };
@@ -34,6 +35,7 @@ export class WorldEngine {
   private hits: { selection: Selection; x: number; y: number; w: number; h: number }[] = [];
   private listeners: (() => void)[] = [];
   private palette = { amber: '#dca34d', teal: '#4d8a76', clay: '#b66c4f', slate: '#667c8e' };
+  private game: GameState | null = null;
 
   constructor(private element: HTMLCanvasElement, private callbacks: { onSelect: (item: Selection) => void; onViewChange?: (zoom: number) => void }) {
     const ctx = element.getContext('2d', { alpha: false }); if (!ctx) throw new Error('Canvas 2D tidak tersedia.'); this.ctx = ctx;
@@ -52,6 +54,7 @@ export class WorldEngine {
     this.bind(); this.frame = requestAnimationFrame(this.tick);
   }
   setSurvivors(list: Survivor[], ownId?: string) { this.survivors = list.filter((s, i, arr) => s.id && arr.findIndex(v => v.id === s.id) === i); this.ownId = ownId; }
+  setGameState(game: GameState) { this.game = game; }
   zoomBy(factor: number) { this.zoomAt(factor, this.width / 2, this.height / 2); }
   resetView() { this.zoom = this.initialZoom(); this.pan = { x: 0, y: 0 }; this.focusedId = undefined; this.callbacks.onViewChange?.(this.zoom); }
   setLabels(on: boolean) { this.labels = on; }
@@ -202,6 +205,12 @@ export class WorldEngine {
   }
   private actorPosition(s: Survivor, t: number) {
     const seed = hash(s.id); const phase = (seed % 1000) / 1000; const activity = (s.activity || s.role).toLowerCase(); let route: [number, number][];
+    const job = this.game?.jobs.find(j => j.members.some(m => m.id === s.id));
+    if (job) {
+      const stations: Record<string, [number, number]> = { chop: [-6, .5], loot: [5, 3], guard: [2, -5.7], attack: [2, -6.5], forage: [-4, 5.5], craft: [-4, 2], bandage: [-2, 4], build: [-5.5, 1.5], repair: [2, 2.7], heal: [-1, 4.5], rest: [1, 3.4], eat: [-1.6, 3.6] };
+      const base = stations[job.kind] || [-4, 3]; const n = job.members.findIndex(m => m.id === s.id);
+      return { x: base[0] + (n % 2) * .65, y: base[1] + Math.floor(n / 2) * .7, walking: false, heading: 1, phase };
+    }
     if (/jaga|perimeter|penjaga/.test(activity)) route = [[-6, -6], [-2, -6], [4.8, -6], [6, -4], [4.8, -6], [-2, -6]];
     else if (/air|logistik|persediaan/.test(activity)) route = [[-4, 4.2], [-2.8, 4.0], [-2.6, 3.6], [-2.8, 4], [-4, 4.2]];
     else if (/istirahat|tidur/.test(activity)) return { x: 1.4 + phase * 1.2, y: 3.4 + phase * .25, walking: false, heading: .3, phase };
@@ -230,6 +239,22 @@ export class WorldEngine {
     const face = heading >= -1;
     if (face || infected) { ctx.fillStyle = '#f0e6c9'; ctx.fillRect(-4.5, -44, 3.2, 3); ctx.fillRect(2, -44, 3.2, 3); ctx.fillStyle = '#314b41'; ctx.fillRect(-3.1, -43.7, 1.6, 2.4); ctx.fillRect(3.4, -43.7, 1.6, 2.4); ctx.fillStyle = infected ? '#6b7456' : '#976f51'; ctx.fillRect(-1.2, -38, 3, 1.2); }
     ctx.restore();
+    if (!infected && this.game) {
+      const job = this.game.jobs.find(j => j.members.some(m => m.id === s.id));
+      if (job) {
+        const names: Record<string,string> = { chop:'NEBANG',loot:'LOOTING',guard:'JAGA',attack:'LAWAN',forage:'MERAMU',craft:'MERAKIT',bandage:'MERAMU',build:'MEMBANGUN',repair:'PERBAIKI',heal:'MERAWAT',rest:'ISTIRAHAT',eat:'RANSUM' };
+        const swing = Math.sin(time * 7 + hash(s.id)) * .55;
+        if (['chop','attack','craft','build','repair'].includes(job.kind)) {
+          ctx.save();ctx.translate(12,-24);ctx.rotate(swing-.4);path(ctx,[{x:0,y:3},{x:10,y:-15}],C.wood,3);
+          polygon(ctx,[{x:7,y:-19},{x:19,y:-18},{x:16,y:-9},{x:7,y:-12}],job.kind==='attack'?'#c0c6bb':'#9daaa1');ctx.restore();
+          if (Math.sin(time*7)>0.7) { ctx.fillStyle='#e8cc81';for(let i=0;i<3;i++)ctx.fillRect(18+i*4,-26+i*5,2,2); }
+        } else if (job.kind==='heal' || job.kind==='bandage') { roundRect(ctx,10,-24,12,10,2,'#e4e6cb');ctx.fillStyle='#a66f59';ctx.fillRect(15,-23,2,8);ctx.fillRect(12,-20,8,2); }
+        else if (job.kind==='loot') { roundRect(ctx,12,-26,14,14,3,'#8e7855');path(ctx,[{x:14,y:-26},{x:21,y:-30},{x:25,y:-26}],'#c8b77c',2); }
+        roundRect(ctx,-28,6,56,13,4,'#183e34dc');ctx.fillStyle='#f6e6bc';ctx.font='bold 7px system-ui';ctx.textAlign='center';ctx.fillText(names[job.kind]||'BEKERJA',0,15);
+      }
+      const hp = this.game.crew.find(p => p.id === s.id)?.health;
+      if (hp !== undefined && hp<100) { roundRect(ctx,-13,-61,26,3,1,'#9d8d70');roundRect(ctx,-13,-61,26*hp/100,3,1,'#ba765d'); }
+    }
     if (own) { ctx.fillStyle = '#f2c36f'; polygon(ctx, [{ x: -5, y: -65 }, { x: 5, y: -65 }, { x: 0, y: -59 }], '#f2c36f'); }
     if (this.labels && !infected && !own) this.drawName(s.name, 0, -78, false);
   }
@@ -246,13 +271,20 @@ export class WorldEngine {
     const items: SceneItem[] = [];
     for (const tree of this.trees) { const p = iso(tree.x, tree.y), w = 260 * tree.size, h = 315 * tree.size; items.push({ x: tree.x, y: tree.y, depth: tree.x + tree.y, draw: () => ctx.drawImage(this.treeSprites[tree.variant], p.x - w / 2, p.y - h * .908, w, h) }); }
     items.push({ x: 0, y: -1, depth: 1, selection: { kind: 'house', name: 'Rumah pertama' }, hit: { x: -214, y: -237, w: 428, h: 337 }, draw: () => { const p = iso(0, -1); ctx.drawImage(this.house, p.x - 350, p.y - 390); } });
-    items.push({ x: -3, y: 2.8, depth: -.2, selection: { kind: 'crate', name: 'Kotak persediaan kosong' }, hit: { x: -30, y: -36, w: 60, h: 52 }, draw: () => { const p = iso(-3, 2.8); ctx.save(); ctx.translate(p.x, p.y); this.drawCrate(); ctx.restore(); } });
+    items.push({ x: -3, y: 2.8, depth: -.2, selection: { kind: 'crate', name: 'Gudang markas' }, hit: { x: -30, y: -36, w: 60, h: 52 }, draw: () => { const p = iso(-3, 2.8); ctx.save(); ctx.translate(p.x, p.y); this.drawCrate(); if ((this.game?.camp.wood || 0)>0) for(let i=0;i<3;i++) box(ctx,-.25+i*.16,0,.1,.13,.38,.5,C.timber,C.wood,'#80603c');ctx.restore(); } });
     items.push({ x: -1.4, y: 3.1, depth: 1.7, selection: { kind: 'water', name: 'Persediaan awal' }, hit: { x: -51, y: -68, w: 102, h: 80 }, draw: () => { const p = iso(-1.4, 3.1); ctx.save(); ctx.translate(p.x, p.y); this.drawSupplies(); ctx.restore(); } });
     items.push({ x: .55, y: 2.2, depth: 2.75, selection: { kind: 'radio', name: 'Radio darurat' }, hit: { x: -20, y: -50, w: 40, h: 54 }, draw: () => { const p = iso(.55, 2.2); ctx.save(); ctx.translate(p.x, p.y); this.drawRadio(); ctx.restore(); } });
     items.push({ x: -5.5, y: 1.5, depth: -4, selection: { kind: 'plot', name: 'Lahan pembangunan' }, hit: { x: -70, y: -25, w: 140, h: 75 }, draw: () => { const p = iso(-5.5, 1.5); if (this.labels) { ctx.save(); ctx.globalAlpha = .7; this.drawName('Lahan kosong', p.x, p.y - 2); ctx.restore(); } } });
     // A sparse old agricultural fence. It does not enclose the settlement.
     for (let x = -6; x <= 6; x += 2) { const p = iso(x, -6.7); items.push({ x, y: -6.7, depth: x - 6.7, draw: () => { ctx.save(); ctx.translate(p.x, p.y); box(ctx, -.05, -.05, 0, .1, .1, 1.05, '#a28b60', '#8e7750', '#776446'); for (const z of [.35, .72]) path(ctx, [iso(0, 0, z), iso(1.8, 0, z - .12)], '#a0a68c', 1); ctx.restore(); } }); }
-    for (let i = 0; i < 2; i++) { const x = -1 + i * 4 + Math.sin(time * .2 + i) * .13, y = -8.15 - i * .4, p = iso(x, y); items.push({ x, y, depth: x + y, selection: { kind: 'zombie', id: `zombie-${i}`, name: 'Zombie di luar lahan' }, hit: { x: -16, y: -56, w: 32, h: 59 }, draw: () => { ctx.save(); ctx.translate(p.x, p.y); this.drawActor({ id: `zombie-${i}`, name: '', role: '', activity: '', appearance: 'clay', joinedDay: 1 }, time + i, true, 1, false, true); ctx.restore(); } }); }
+    if (this.game?.camp.fenceLevel) for(let i=-6;i<=6;i++) for(const edge of [0,1,2,3]) {
+      if(edge===2 && Math.abs(i)<2)continue;
+      const x=edge===0?-6.5:edge===3?6.5:i,y=edge===1?-6.5:edge===2?6.5:i,p=iso(x,y);
+      items.push({x,y,depth:x+y,draw:()=>{ctx.save();ctx.translate(p.x,p.y);box(ctx,0,0,0,.11,.11,1.12,C.timber,C.wood,'#786141');for(const z of [.35,.78])path(ctx,[iso(0,0,z),iso(edge===0||edge===3?0:1,edge===0||edge===3?1:0,z)],'#b99a67',5);ctx.restore();}});
+    }
+    const stationTree=iso(-6.7,.3);items.push({x:-6.7,y:.3,depth:-6.4,selection:{kind:'wood',name:'Area penebangan'},hit:{x:-60,y:-145,w:120,h:155},draw:()=>ctx.drawImage(this.treeSprites[2],stationTree.x-78,stationTree.y-173,156,190)});
+    items.push({x:5.5,y:2.7,depth:8.2,selection:{kind:'loot',name:'Rute looting'},hit:{x:-30,y:-40,w:60,h:52},draw:()=>{const p=iso(5.5,2.7);ctx.save();ctx.translate(p.x,p.y);box(ctx,-.4,-.3,0,.8,.6,.6,'#b7a372','#8d794b','#78653e');for(const x of [-.25,.25])box(ctx,x,-.31,0,.08,.64,.62,'#6c8475','#597064','#476156');roundRect(ctx,-4,-23,8,10,2,'#d9c780');ctx.restore();}});
+    for (let i = 0; i < (this.game ? Math.min(6,Math.ceil(this.game.camp.enemyHp/16)) : 2); i++) { const x = -1 + i * 1.8 + Math.sin(time * .2 + i) * .13, y = (this.game?.camp.raidDeadline?-7.1:-8.15) - i * .2, p = iso(x, y); items.push({ x, y, depth: x + y, selection: { kind: 'zombie', id: `zombie-${i}`, name: 'Zombie di luar lahan' }, hit: { x: -16, y: -56, w: 32, h: 59 }, draw: () => { ctx.save(); ctx.translate(p.x, p.y); this.drawActor({ id: `zombie-${i}`, name: '', role: '', activity: '', appearance: 'clay', joinedDay: 1 }, time + i, true, 1, false, true); ctx.restore(); } }); }
     let active = this.survivors;
     if (active.length > 29) { const start = Math.floor(time / 28) * 28 % active.length; active = [...active.slice(start), ...active.slice(0, start)].slice(0, 29); let reserved = 0; for (const id of [this.ownId, this.focusedId]) { const required = this.survivors.find(s => s.id === id); if (required && !active.some(s => s.id === required.id)) { active[active.length - 1 - reserved] = required; reserved++; } } }
     for (const s of [this.arga(), ...active]) { const p = this.actorPosition(s, time), v = iso(p.x, p.y); const own = s.id === this.ownId; items.push({ x: p.x, y: p.y, depth: p.x + p.y + .15, selection: { kind: 'survivor', id: s.id, name: s.name }, hit: { x: -18, y: -61, w: 36, h: 65 }, draw: () => { ctx.save(); ctx.translate(v.x, v.y); this.drawActor(s, time, p.walking, p.heading, own); ctx.restore(); } }); }

@@ -15,6 +15,35 @@ Frontend React + Vite, backend Cloudflare Worker, penyimpanan Cloudflare D1. Tid
 - Aktivitas karakter dan voting prioritas pembangunan. Mengganti pilihan memperbarui suara lama.
 - Identitas per browser dengan cookie HttpOnly; kunci pemulihan pribadi untuk pindah perangkat.
 - Data disimpan di database bersama, bukan sekadar localStorage. Profil uji dan database lokal tidak masuk repo.
+- **Bertahan bersama:** menebang, looting/peti suplai, mencari air/herba, merakit, meramu obat, membangun pagar, memperbaiki markas, menjaga, melawan zombie, merawat teman, istirahat, dan ransum.
+- Tim hingga 4 pemain, bahan/gudang bersama, bonus keahlian peran, kesehatan/energi, sapaan, jurnal kegiatan, dan gelombang zombie.
+
+## Cara bermain bersama
+
+1. Buat kartu, lalu buka **Bertahan → Kegiatan**. Keahlian peran ditampilkan di urutan teratas.
+2. Kegiatan berlangsung 5–40 detik dan memakai energi. Satu pemain hanya bisa mengikuti satu kegiatan sekaligus. Energi pulih 1 tiap 3 detik, maksimal 100.
+3. Pemain lain membuka **Kerja sama** dan menekan **Bantu**. Maksimal 4 pemain per tim. Bantuan memakai 8 energi, mempercepat 5 detik (8 detik jika ahli), dan menambah hasil pengumpulan, serangan, penjagaan, atau pembangunan. Semua anggota mendapat kontribusi setelah selesai.
+4. Hasil masuk gudang markas bersama. Bahan untuk crafting/perbaikan/pembangunan dibayar sekali di awal oleh kegiatan pemimpin. Waktu selesai, energi, hasil loot dan pengeluaran bahan ditentukan server.
+5. Gunakan **Kerja sama** untuk menyapa, berterima kasih, meminta bantuan, atau merawat penyintas terluka. Kartu yang dibagikan tetap baca-saja.
+
+| Peran | Keunggulan |
+| --- | --- |
+| Perintis | Hasil kayu dan progres pagar lebih besar |
+| Penjaga | Pertahanan dan damage lebih kuat, luka tempur lebih ringan |
+| Penjelajah | Peluang peti suplai 55% (umum 30%), luka looting lebih ringan |
+| Perakit | Kayu, perkakas, pagar dan perbaikan lebih efektif |
+| Peramu | Hasil air, herba, dan kotak medis lebih banyak |
+| Medis | Perawatan memulihkan 45 HP (umum 25), hasil kotak medis lebih banyak |
+
+Semua peran masih dapat melakukan kegiatan dasar; keahlian memberi hasil lebih baik. Perkakas gudang menambah kayu/scrap maksimal +3. Pagar naik satu level tiap 60 progres dan tampil di peta; tiap level menahan 4 kerusakan tambahan.
+
+Gelombang zombie dijadwalkan tiap 15 menit, dengan 2 menit untuk merespons. Serang untuk menghabiskan HP ancaman, atau jaga untuk mengurangi kerusakan rumah. Pertahanan penjagaan habis setelah serangan. Markas yang rusak dapat diperbaiki; karakter tidak hilang permanen.
+
+Aktivitas bersama disinkronkan lewat polling 15 detik saat tab terlihat dan saat tugas sendiri selesai, bukan gerakan multiplayer lewat WebSocket. Daftar penyintas bukan indikator online. Jam server menjadi sumber waktu: hasil pekerjaan yang jatuh tempo dicatat saat permintaan berikutnya, termasuk setelah browser ditutup. Saat semua pemain offline, sistem tidak menghitung rangkaian serangan tanpa batas; satu serangan terlewat diselesaikan saat markas kembali diakses. Tidak memerlukan cron atau server yang terus hidup.
+
+Penyelesaian tugas menggunakan transaksi D1 dan transisi status bersyarat. Dua browser yang menyelesaikan satu tugas tidak menggandakan hasil. Percobaan bergabung dua kali atau memulai pekerjaan kedua ditolak tanpa memotong bahan/energi tambahan.
+
+Pengujian lokal (jalankan dev server dahulu): `npm run test:api` dan `npm run test:survival`. Tes survival membuat karakter uji dan mengubah jam tugas **di database lokal saja** untuk menguji kerja sama, biaya bahan, hadiah sekali, pagar, perawatan, dan serangan. Jangan gunakan database produksi untuk tes ini.
 
 ## Jalankan lokal
 
