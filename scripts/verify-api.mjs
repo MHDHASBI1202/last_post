@@ -12,8 +12,8 @@ const call = async (path, body, cookie, origin = base) => {
   return { status: response.status, data: await response.json(), cookie: response.headers.get("set-cookie")?.split(";")[0] };
 };
 const before = await call("/api/world"); assert.equal(before.status, 200);
-const customization={skin:"deep",hair:"long",hairColor:"gray",hat:"cap",accessory:"glasses",backpack:"rucksack",pants:"olive"};
-const profile = { name: "Tes Lokal API", role: "perakit", specialty: "Pemeriksa kaleng", appearance: "teal",customization };
+const customization={gender:"female",skin:"bronze",hair:"braids",hairColor:"copper",hat:"straw",accessory:"freckles",backpack:"medical",pants:"camo"};
+const profile = { name: "Tes Lokal API", role: "perakit", specialty: "Pemeriksa kaleng", appearance: "plum",customization };
 assert.equal((await call("/api/me", profile, undefined, "https://evil.example")).status, 403);
 assert.equal((await call("/api/me", { ...profile, role: "admin" })).status, 400);
 assert.equal((await call("/api/me", { action: "vote", choice: "air" })).status, 401);

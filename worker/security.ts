@@ -1,3 +1,4 @@
+import { JACKETS } from "../src/character-style.ts";
 export const SESSION_COOKIE = "pt_session";
 export const SESSION_DAYS = 180;
 export function randomSecret(bytes = 32): string {
@@ -24,6 +25,6 @@ export function validateProfile(body: Record<string, unknown>) {
   if (name.length < 2 || name.length > 24) throw new Error("Nama panggilan harus 2–24 karakter.");
   if (specialty.length > 32) throw new Error("Sebutan maksimal 32 karakter.");
   if (!["perintis", "penjaga", "perakit", "peramu", "penjelajah", "medis"].includes(role)) throw new Error("Peran tidak dikenal.");
-  if (!["amber", "teal", "clay", "slate"].includes(appearance)) throw new Error("Warna jaket tidak dikenal.");
+  if (!Object.hasOwn(JACKETS,appearance)) throw new Error("Warna jaket tidak dikenal.");
   return { name, specialty, role, appearance };
 }

@@ -26,3 +26,5 @@ test("validates role, look and name on the server", () => {
   assert.throws(() => validateProfile({ ...valid, appearance: "unknown" }));
   assert.throws(() => validateProfile({ ...valid, specialty: "x".repeat(33) }));
 });
+
+test("new jacket colors can be saved",()=>{for(const appearance of ["plum","rose","navy","moss","burgundy","ivory","charcoal","orange"])assert.equal(validateProfile({name:"Arga",role:"penjaga",appearance}).appearance,appearance);assert.throws(()=>validateProfile({name:"Arga",role:"penjaga",appearance:"toString"}));});

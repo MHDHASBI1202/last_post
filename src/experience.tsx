@@ -5,7 +5,7 @@ import { WorldEngine, type Survivor } from "./world-engine";
 import SurvivalPanel from "./survival-panel";
 import { useSurvival } from "./use-survival";
 import CharacterCustomizer, { CharacterAvatar as Avatar } from "./character-avatar";
-import { DEFAULT_STYLE,normalizeStyle,drawCharacter,type CharacterStyle } from "./character-style";
+import { JACKETS,JACKET_LABELS,DEFAULT_STYLE,normalizeStyle,drawCharacter,type CharacterStyle } from "./character-style";
 
 type Tab = "peta" | "aksi" | "radio" | "kartu" | "rencana" | "akun";
 type Profile = Survivor & { code: string; specialty: string; createdAt?: number };
@@ -14,7 +14,7 @@ type Selection = { kind: string; id?: string; name: string };
 type MeResponse = { authenticated: boolean; profile: Profile | null; vote: string | null; error?: string; recoveryKey?: string };
 const ROLES = [{ id: "perintis", name: "Perintis", icon: Compass, desc: "Mulai dari yang ada." }, { id: "penjaga", name: "Penjaga", icon: Shield, desc: "Mata untuk markas." }, { id: "perakit", name: "Perakit", icon: Wrench, desc: "Barang rusak, peluang baru." }, { id: "peramu", name: "Peramu", icon: Leaf, desc: "Paham apa yang tumbuh." }, { id: "penjelajah", name: "Penjelajah", icon: Footprints, desc: "Berani mencari jalan." }, { id: "medis", name: "Medis", icon: HeartPulse, desc: "Jaga satu sama lain." }];
 const ACTIVITIES = [{ id: "jelajah", name: "Keliling lahan", icon: Footprints, desc: "Kenali jalan di sekitar markas." }, { id: "jaga", name: "Jaga perimeter", icon: Shield, desc: "Awasi batas lahan dari dalam." }, { id: "air", name: "Cek persediaan", icon: Package, desc: "Periksa meja persediaan bersama." }, { id: "istirahat", name: "Istirahat di teras", icon: House, desc: "Ambil napas sebelum melanjutkan." }];
-const LOOKS: Record<string, string> = { amber: "#dca34d", teal: "#4d8a76", clay: "#b66c4f", slate: "#667c8e" };
+const LOOKS = JACKETS;
 const roleName = (id: string) => ROLES.find(r => r.id === id)?.name || "Penyintas";
 const navs = [{ id: "peta" as Tab, label: "Peta", icon: Map }, { id: "aksi" as Tab, label: "Bertahan", icon: Shield }, { id: "kartu" as Tab, label: "Kartuku", icon: IdCard }, { id: "rencana" as Tab, label: "Rencana", icon: Hammer }, { id: "akun" as Tab, label: "Akun", icon: UserRound }];
 
@@ -134,7 +134,7 @@ export default function Experience() {
     <label>Nama panggilan<input autoComplete="nickname" name="name" placeholder="Kamu dipanggil siapa?" defaultValue={profile?.name || ""} minLength={2} maxLength={24} required/><span className="field-help">Tampil di peta. Pakai nama panggilanmu.</span></label>
     <fieldset><legend>Pilih peranmu</legend><div className="role-grid">{ROLES.map(r => <button key={r.id} type="button" className={formRole === r.id ? "role-option chosen" : "role-option"} onClick={() => setFormRole(r.id)} aria-pressed={formRole === r.id}><r.icon size={21}/><strong>{r.name}</strong><small>{r.desc}</small></button>)}</div></fieldset>
     <label>Sebutan di markas <span className="optional">opsional</span><input name="specialty" defaultValue={profile?.specialty || ""} placeholder="Mis. Kepala Divisi Cek Kaleng" maxLength={32}/></label>
-    <fieldset><legend>Warna jaketmu</legend><div className="swatches">{Object.entries(LOOKS).map(([key, color]) => <button key={key} type="button" style={{ background: color }} className={formLook === key ? "swatch chosen" : "swatch"} onClick={() => setFormLook(key)} aria-label={`Jaket ${key}`} aria-pressed={formLook === key}>{formLook === key && <Check size={19}/>}</button>)}</div></fieldset>
+    <fieldset><legend>Warna jaketmu</legend><div className="swatches">{Object.entries(LOOKS).map(([key, color]) => <button key={key} type="button" style={{ background: color }} className={formLook === key ? "swatch chosen" : "swatch"} onClick={() => setFormLook(key)} title={JACKET_LABELS[key]} aria-label={`Jaket ${key}`} aria-pressed={formLook === key}>{formLook === key && <Check size={19}/>}</button>)}</div><small className="fine-print">{JACKET_LABELS[formLook]} · 12 pilihan warna</small></fieldset>
     <CharacterCustomizer value={formStyle} onChange={setFormStyle} look={formLook}/>
     {error && <p className="inline-error" role="alert">{error}</p>}
     <button className="button primary wide" disabled={busy || !loaded}>{busy ? <LoaderCircle className="spin" size={20}/> : <IdCard size={20}/>} {editing ? "Simpan perubahan" : "Terbitkan kartu penyintas"}</button>

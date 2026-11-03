@@ -147,3 +147,5 @@ Database Sites yang dipakai pratinjau awal tidak otomatis dibawa ke Cloudflare m
 | `wrangler.jsonc` | Konfigurasi deployment |
 
 Tidak ada API key, credential, database pengguna, aset video, atau audio pribadi dalam repo ini.
+
+Kustomisasi karakter: laki-laki/perempuan, 8 warna kulit, 12 gaya rambut, 10 warna rambut, 10 penutup kepala, 12 aksesori wajah, 8 pilihan tas (termasuk tanpa tas), 12 warna celana, dan 12 warna jaket. Semua pilihan berlaku untuk kedua gender tanpa perbedaan kemampuan. Penampilan tersimpan di profil, peta, serta kartu; profil lama memakai gender laki-laki tanpa mengubah pilihannya.
