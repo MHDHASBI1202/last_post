@@ -17,12 +17,22 @@ Frontend React + Vite, backend Cloudflare Worker, penyimpanan Cloudflare D1. Tid
 - Data disimpan di database bersama, bukan sekadar localStorage. Profil uji dan database lokal tidak masuk repo.
 - **Bertahan bersama:** menebang, looting/peti suplai, mencari air/herba, merakit, meramu obat, membangun pagar, memperbaiki markas, menjaga, melawan zombie, merawat teman, istirahat, dan ransum.
 - Tim hingga 4 pemain, bahan/gudang bersama, bonus keahlian peran, kesehatan/energi, sapaan, jurnal kegiatan, dan gelombang zombie.
+- Gerakan dengan rute yang menghindari rumah dan memakai gerbang saat pagar sudah berdiri. Karakter berjalan ke lokasi, mengerjakan kegiatan, lalu kembali; animasi alat aktif setelah tiba.
+- Kustomisasi kulit, rambut, topi, aksesori, tas, celana, dan jaket. Tampilan tersimpan di D1 dan konsisten di peta, kartu, link berbagi, serta PNG unduhan.
+
+## Kustomisasi dan interaksi dunia
+
+Buka **Akun → Kustomisasi karakter**, pilih penampilan, cek tampak depan/belakang, lalu tekan **Simpan perubahan**. Kamu juga bisa mengaturnya ketika pertama membuat kartu. Kartu lama mendapat penampilan standar tanpa mengubah identitas atau progresnya. Permintaan dari versi aplikasi lama yang belum mengirim penampilan tidak menimpa pilihan baru.
+
+Klik pohon untuk mulai menebang, peti/rute looting untuk mencari suplai, lahan untuk membangun, atau zombie untuk melawan. Klik penyintas lain untuk menyapa, membantu kegiatan aktif, atau merawat yang terluka. Server tetap memeriksa energi, pekerjaan aktif, bahan, dan target.
+
+Animasi peta memakai Canvas 2D: arah badan, langkah, alat, tas, gerak istirahat/perawatan, respons pohon, peti terbuka saat dicari, serta zombie tumbang saat HP ancaman berkurang. Rute A* menghindari bangunan dan pagar. Gerakan visual di tiap browser tetap lokal; status kegiatan, hasil, dan penampilan tersinkron melalui server. Ini belum sistem posisi multiplayer per frame.
 
 ## Cara bermain bersama
 
 1. Buat kartu, lalu buka **Bertahan → Kegiatan**. Keahlian peran ditampilkan di urutan teratas.
 2. Kegiatan berlangsung 5–40 detik dan memakai energi. Satu pemain hanya bisa mengikuti satu kegiatan sekaligus. Energi pulih 1 tiap 3 detik, maksimal 100.
-3. Pemain lain membuka **Kerja sama** dan menekan **Bantu**. Maksimal 4 pemain per tim. Bantuan memakai 8 energi, mempercepat 5 detik (8 detik jika ahli), dan menambah hasil pengumpulan, serangan, penjagaan, atau pembangunan. Semua anggota mendapat kontribusi setelah selesai.
+3. Pemain lain membuka **Kerja sama** dan menekan **Bantu**. Maksimal 4 pemain per tim. Bantuan memakai 8 energi, mempercepat hingga 5 detik (hingga 8 detik jika ahli), dan menambah hasil pengumpulan, serangan, penjagaan, atau pembangunan. Waktu perjalanan tetap disisakan; tugas yang hampir selesai tidak menerima bantuan baru. Semua anggota mendapat kontribusi setelah selesai.
 4. Hasil masuk gudang markas bersama. Bahan untuk crafting/perbaikan/pembangunan dibayar sekali di awal oleh kegiatan pemimpin. Waktu selesai, energi, hasil loot dan pengeluaran bahan ditentukan server.
 5. Gunakan **Kerja sama** untuk menyapa, berterima kasih, meminta bantuan, atau merawat penyintas terluka. Kartu yang dibagikan tetap baca-saja.
 

@@ -1,9 +1,12 @@
 import type { GameState } from "./survival-rules";
-export type Survivor = { id: string; name: string; role: string; activity: string; appearance: string; joinedDay: number };
+import { drawCharacter,type CharacterStyle,type Facing } from "./character-style";
+import { findRoute,followRoute,routeDistance,walkable,type WorldPoint } from "./world-navigation";
+export type Survivor = { id: string; name: string; role: string; activity: string; appearance: string; joinedDay: number; customization?: CharacterStyle };
 type Selection = { kind: 'house' | 'crate' | 'radio' | 'water' | 'plot' | 'survivor' | 'zombie' | 'wood' | 'loot'; id?: string; name: string };
 type Point = { x: number; y: number };
 type SceneItem = { x: number; y: number; depth: number; draw: () => void; selection?: Selection; hit?: { x: number; y: number; w: number; h: number } };
 type Tree = { x: number; y: number; size: number; variant: number };
+type Motion = { x:number; y:number; route:WorldPoint[]; distance:number; key:string; lastT:number; walked:number; facing:Facing; heading:number; idle:number; pauseUntil:number; lastJob:string; mode:"walk"|"work"|"idle"|"return"; working:boolean; walking:boolean };
 
 const TILE_X = 43, TILE_Y = 22, HEIGHT = 39;
 const C = { ink: '#233e37', wood: '#765a3a', timber: '#aa8658', cream: '#e5d5aa', shade: '#bcb997', teal: '#447f77', tealLight: '#73a398', slate: '#5d7e7b', slateDark: '#3c5b5e', gold: '#edb86b', ground: '#b8c598', clay: '#c9b68b' };
@@ -36,6 +39,14 @@ export class WorldEngine {
   private listeners: (() => void)[] = [];
   private palette = { amber: '#dca34d', teal: '#4d8a76', clay: '#b66c4f', slate: '#667c8e' };
   private game: GameState | null = null;
+  private motions=new Map<string,Motion>();
+  private serverOffset=0;
+  private hovered: string | null=null;
+  private lastClick:{x:number;y:number;at:number}|null=null;
+  private fallen:{index:number;at:number}[]=[];
+  private damageAt=0;
+  private damageAmount=0;
+  private finished:{x:number;y:number;at:number}[]=[];
 
   constructor(private element: HTMLCanvasElement, private callbacks: { onSelect: (item: Selection) => void; onViewChange?: (zoom: number) => void }) {
     const ctx = element.getContext('2d', { alpha: false }); if (!ctx) throw new Error('Canvas 2D tidak tersedia.'); this.ctx = ctx;
@@ -54,7 +65,13 @@ export class WorldEngine {
     this.bind(); this.frame = requestAnimationFrame(this.tick);
   }
   setSurvivors(list: Survivor[], ownId?: string) { this.survivors = list.filter((s, i, arr) => s.id && arr.findIndex(v => v.id === s.id) === i); this.ownId = ownId; }
-  setGameState(game: GameState) { this.game = game; }
+  setGameState(game: GameState) {
+    if(this.game){const old=this.game.camp.enemyHp,newHp=game.camp.enemyHp;
+      if(newHp<old){this.damageAt=performance.now();this.damageAmount=old-newHp;for(let i=Math.min(6,Math.ceil(newHp/16));i<Math.min(6,Math.ceil(old/16));i++)this.fallen.push({index:i,at:performance.now()});}
+      for(const j of this.game.jobs)if(j.endsAt<=game.serverTime&&!game.jobs.some(n=>n.id===j.id)){const m=this.motions.get(j.ownerId);if(m)this.finished.push({x:m.x,y:m.y,at:performance.now()});}
+    }
+    this.game = game; this.serverOffset=game.serverTime-(game.clientReceivedAt || Date.now());
+  }
   zoomBy(factor: number) { this.zoomAt(factor, this.width / 2, this.height / 2); }
   resetView() { this.zoom = this.initialZoom(); this.pan = { x: 0, y: 0 }; this.focusedId = undefined; this.callbacks.onViewChange?.(this.zoom); }
   setLabels(on: boolean) { this.labels = on; }
@@ -77,7 +94,7 @@ export class WorldEngine {
     const local = (e: PointerEvent) => { const r = this.element.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
     on('pointerdown', e => { const p = local(e); this.pointers.set(e.pointerId, p); this.element.setPointerCapture(e.pointerId); this.pointerStart = p; this.moved = false; this.focusedId = undefined; this.element.style.cursor = 'grabbing'; if (this.pointers.size === 2) this.pinch = this.pointerDistance(); });
     on('pointermove', e => {
-      const old = this.pointers.get(e.pointerId); if (!old) return; const p = local(e); this.pointers.set(e.pointerId, p);
+      const old = this.pointers.get(e.pointerId); if (!old) {const p=local(e),hit=[...this.hits].reverse().find(h=>p.x>=h.x&&p.x<=h.x+h.w&&p.y>=h.y&&p.y<=h.y+h.h);this.hovered=hit?`${hit.selection.kind}:${hit.selection.id||hit.selection.name}`:null;this.element.style.cursor=hit?'pointer':'grab';return;} const p = local(e); this.pointers.set(e.pointerId, p);
       if (Math.hypot(p.x - this.pointerStart.x, p.y - this.pointerStart.y) > 5) this.moved = true;
       if (this.pointers.size === 2) { const distance = this.pointerDistance(); const points = [...this.pointers.values()]; if (this.pinch > 0) this.zoomAt(distance / this.pinch, (points[0].x + points[1].x) / 2, (points[0].y + points[1].y) / 2); this.pinch = distance; this.moved = true; }
       else { this.pan.x += p.x - old.x; this.pan.y += p.y - old.y; this.clampPan(); }
@@ -94,7 +111,7 @@ export class WorldEngine {
     this.clampPan(); this.callbacks.onViewChange?.(this.zoom);
   }
   private clampPan() { const maxX = Math.min(1400 * this.zoom, Math.max(0, 2100 * this.zoom - this.width / 2 - 24)), maxY = Math.min(850 * this.zoom, Math.max(0, 1300 * this.zoom - this.height * .55 - 24)); this.pan.x = Math.max(-maxX, Math.min(maxX, this.pan.x)); this.pan.y = Math.max(-maxY, Math.min(maxY, this.pan.y)); }
-  private select(x: number, y: number) { for (let i = this.hits.length - 1; i >= 0; i--) { const h = this.hits[i]; if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) { this.callbacks.onSelect(h.selection); return; } } }
+  private select(x: number, y: number) { this.lastClick={x,y,at:performance.now()};for (let i = this.hits.length - 1; i >= 0; i--) { const h = this.hits[i]; if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) { this.callbacks.onSelect(h.selection); return; } } }
   private tick = (now: number) => { if (this.destroyed) return; if (now - this.lastDraw > 1000 / 30) { this.draw((now - this.started) / 1000); this.lastDraw = now; } this.frame = requestAnimationFrame(this.tick); };
   private arga(): Survivor { return { id: 'arga', name: 'Arga', role: 'Penyintas pertama', activity: 'jelajah', appearance: 'amber', joinedDay: 1 }; }
 
@@ -204,59 +221,60 @@ export class WorldEngine {
     roundRect(ctx, p.x - 9, p.y - 8, 11, 10, 1, '#1f3f3c'); ctx.fillStyle = '#cbb170'; ctx.fillRect(p.x + 4, p.y - 7, 5, 3); ctx.strokeStyle = '#81968b'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(p.x + 8, p.y - 11); ctx.lineTo(p.x + 13, p.y - 33); ctx.stroke();
   }
   private actorPosition(s: Survivor, t: number) {
-    const seed = hash(s.id); const phase = (seed % 1000) / 1000; const activity = (s.activity || s.role).toLowerCase(); let route: [number, number][];
-    const job = this.game?.jobs.find(j => j.members.some(m => m.id === s.id));
-    if (job) {
-      const stations: Record<string, [number, number]> = { chop: [-6, .5], loot: [5, 3], guard: [2, -5.7], attack: [2, -6.5], forage: [-4, 5.5], craft: [-4, 2], bandage: [-2, 4], build: [-5.5, 1.5], repair: [2, 2.7], heal: [-1, 4.5], rest: [1, 3.4], eat: [-1.6, 3.6] };
-      const base = stations[job.kind] || [-4, 3]; const n = job.members.findIndex(m => m.id === s.id);
-      return { x: base[0] + (n % 2) * .65, y: base[1] + Math.floor(n / 2) * .7, walking: false, heading: 1, phase };
+    const seed=hash(s.id),phase=(seed%1000)/1000,spawn={x:((seed%9)-4)*.72,y:4+(seed%3)*.48};
+    let m=this.motions.get(s.id);const fresh=!m;
+    if(!m){m={...spawn,route:[],distance:0,key:'',lastT:t,walked:0,facing:'front',heading:1,idle:seed%5,pauseUntil:t+1+phase*3,lastJob:'',mode:'idle',working:false,walking:false};this.motions.set(s.id,m);}
+    const dt=Math.max(0,t-m.lastT);m.lastT=t;
+    const previousLength=routeDistance(m.route);
+    if(m.distance<previousLength-.01){const health=this.game?.crew.find(p=>p.id===s.id)?.health??100;let speed=(m.lastJob?2.05:1.12)*(health<30?.7:1);
+      if(dt<.5)for(const [id,other]of this.motions)if(id!==s.id&&other.walking&&t-other.lastT<.2&&hash(id)<seed&&Math.hypot(other.x-m.x,other.y-m.y)<.48)speed*=.45;
+      const before={x:m.x,y:m.y};m.distance=Math.min(previousLength,m.distance+speed*dt);const p=followRoute(m.route,m.distance);m.x=p.x;m.y=p.y;
+      const dx=m.x-before.x,dy=m.y-before.y;m.walked+=Math.hypot(dx,dy);m.heading=dx-dy;const sx=(dx-dy)*43,sy=(dx+dy)*22;
+      if(Math.abs(sx)+Math.abs(sy)>.001)m.facing=Math.abs(sx)>Math.abs(sy)*1.3?(sx<0?'left':'right'):(sy<0?'back':'front');
     }
-    if (/jaga|perimeter|penjaga/.test(activity)) route = [[-6, -6], [-2, -6], [4.8, -6], [6, -4], [4.8, -6], [-2, -6]];
-    else if (/air|logistik|persediaan/.test(activity)) route = [[-4, 4.2], [-2.8, 4.0], [-2.6, 3.6], [-2.8, 4], [-4, 4.2]];
-    else if (/istirahat|tidur/.test(activity)) return { x: 1.4 + phase * 1.2, y: 3.4 + phase * .25, walking: false, heading: .3, phase };
-    else if (/bangun|perakit|perajin|tukang/.test(activity)) route = [[-5.2, 3], [-5.2, 1], [-6, 1], [-6, 3]];
-    else if (/medis|medik|dokter/.test(activity)) route = [[-2.8, 4.1], [-1, 4.2], [.8, 4.1], [-1, 4.2]];
-    else route = [[-4, 4], [-1, 5.3], [3.9, 4.4], [4.7, .3], [4.5, -4.3], [-3.8, -4.6], [-5.1, .2]];
-    const durations = route.map((p, i) => Math.hypot(p[0] - route[(i + 1) % route.length][0], p[1] - route[(i + 1) % route.length][1]));
-    const total = durations.reduce((a, b) => a + b, 0); let d = (t * (.38 + phase * .15) + phase * total) % total; let index = 0;
-    while (d > durations[index] && index < durations.length - 1) { d -= durations[index]; index++; }
-    const a = route[index], b = route[(index + 1) % route.length]; const u = d / durations[index];
-    return { x: a[0] + (b[0] - a[0]) * u, y: a[1] + (b[1] - a[1]) * u, walking: true, heading: b[0] - b[1] - a[0] + a[1], phase };
+    const now=Date.now()+this.serverOffset,fence=!!this.game?.camp.fenceLevel;
+    const job=this.game?.jobs.find(j=>j.members.some(member=>member.id===s.id)&&j.endsAt>now);
+    const patient=!job?this.game?.jobs.find(j=>j.kind==='heal'&&j.targetId===s.id&&j.endsAt>now):undefined;
+    const spots:Record<string,[number,number]>={chop:[-6,.5],loot:[5,3.4],guard:[2,-5.7],attack:[2,-7.3],forage:[-4,5.5],craft:[-3.9,2.8],bandage:[-2.5,4.2],build:[-5.5,1.5],repair:[3,.2],heal:[-1,4.5],rest:[1,2.3],eat:[-1.6,3.6]};
+    const idleSpots=[{x:-4.5,y:3.8},{x:-4.5,y:-4.4},{x:4.3,y:-4.4},{x:4.8,y:4.1},spawn];
+    let goal:WorldPoint|undefined,key='';
+    if(job){const base=spots[job.kind],n=job.members.findIndex(member=>member.id===s.id);goal={x:base[0]+(n%2)*.65,y:base[1]+Math.floor(n/2)*.65};
+      if(job.kind==='heal'&&job.targetId&&job.targetId!==s.id){const target=this.motions.get(job.targetId);if(target){goal={x:target.x-.7,y:target.y+.5};}}
+      key='job:'+job.id+':'+Math.round(goal.x*2)+':'+Math.round(goal.y*2)+':'+fence;m.lastJob=job.id;
+    }else if(patient){goal={x:m.x,y:m.y};key='patient:'+patient.id;}
+    else if(m.lastJob){goal=spawn;key='return:'+m.lastJob+':'+fence;}
+    else if(t>=m.pauseUntil){goal=s.activity==='istirahat'?{x:1.4,y:2.4}:idleSpots[m.idle%idleSpots.length];key='idle:'+m.idle+':'+fence;}
+    if(goal&&key!==m.key){if(!walkable(goal,fence)){const nearby=[{x:goal.x+.5,y:goal.y},{x:goal.x-.5,y:goal.y},{x:goal.x,y:goal.y+.5}].find(p=>walkable(p,fence));goal=nearby;}
+      m.route=goal?findRoute({x:m.x,y:m.y},goal,fence):[];m.distance=0;m.key=key;
+      if(fresh&&job&&m.route.length){m.distance=Math.min(routeDistance(m.route),Math.max(0,(now-job.startedAt)/1000)*1.75);const p=followRoute(m.route,m.distance);m.x=p.x;m.y=p.y;}
+    }
+    const length=routeDistance(m.route);m.walking=m.distance<length-.01;m.working=false;
+    if(m.walking){m.mode=!job&&m.lastJob?'return':'walk';
+    }else if(job){m.mode='work';m.working=true;const focus:Record<string,WorldPoint>={chop:{x:-6.7,y:.3},loot:{x:5.5,y:2.7},guard:{x:2,y:-7.4},attack:{x:2.5,y:-7.8},build:{x:-6.5,y:1.5},repair:{x:2,y:.2},craft:{x:-3,y:2.8}};const f=focus[job.kind];if(f){const dx=(f.x-m.x)-(f.y-m.y),dy=(f.x-m.x)+(f.y-m.y);m.facing=Math.abs(dx)>Math.abs(dy)*.7?(dx<0?'left':'right'):(dy<0?'back':'front');}else m.facing='front';
+    }else{m.mode='idle';if(m.key.startsWith('return:')){m.lastJob='';m.pauseUntil=t+3;m.key='pause';}else if(m.key.startsWith('idle:')){m.idle++;m.pauseUntil=t+2+phase*4;m.key='pause';}}
+    return{x:m.x,y:m.y,walking:m.walking,heading:m.heading,phase,facing:m.facing,working:m.working,mode:m.mode};
   }
-  private drawActor(s: Survivor, time: number, walking: boolean, heading: number, own: boolean, infected = false) {
-    const ctx = this.ctx, stride = walking ? Math.sin(time * (infected ? 3.8 : 8) + hash(s.id)) : 0;
-    const palette = this.palette[s.appearance as keyof typeof this.palette] || this.palette.amber; const shirt = infected ? '#925747' : palette; const skin = infected ? '#a4af82' : '#c79a70';
-    shadow(ctx, 1, 0, 13, 5, .18);
-    if (own) { ctx.strokeStyle = '#f7ce7b'; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.ellipse(0, 1, 18, 7, 0, 0, Math.PI * 2); ctx.stroke(); }
-    for (const side of [-1, 1]) { const x = side * 4.2, dy = stride * side * 2.8; roundRect(ctx, x - 3, -15 + dy, 6, 13, 2, '#506c71'); roundRect(ctx, x - 3.8, -4 + dy, 8, 4, 1.5, '#40544d'); }
-    const bob = walking ? Math.abs(stride) * 1.4 : Math.sin(time * 1.5) * .3;
-    ctx.save(); ctx.translate(0, -bob);
-    roundRect(ctx, -9, -35, 18, 22, 5, shirt); ctx.fillStyle = infected ? '#6f5945' : '#bcb280'; ctx.fillRect(-.6, -32, 1.2, 17);
-    for (const side of [-1, 1]) { const swing = stride * side * 3; roundRect(ctx, side * 10 - 3, -33 + swing, 6, 15, 3, shirt); roundRect(ctx, side * 10 - 2.3, -19 + swing, 4.6, 5, 2, skin); }
-    if (!infected && heading < 0) { roundRect(ctx, -8, -34, 16, 17, 4, '#3e756b'); ctx.fillStyle = '#91ac8a'; ctx.fillRect(-6, -33, 12, 3); }
-    roundRect(ctx, -8.5, -52, 17, 19, 5, skin);
-    if (!infected) { roundRect(ctx, -8.6, -54, 17.2, 8, 3, '#4b493b'); ctx.fillStyle = '#5a5141'; ctx.fillRect(-8.6, -49, 3, 7); }
-    const face = heading >= -1;
-    if (face || infected) { ctx.fillStyle = '#f0e6c9'; ctx.fillRect(-4.5, -44, 3.2, 3); ctx.fillRect(2, -44, 3.2, 3); ctx.fillStyle = '#314b41'; ctx.fillRect(-3.1, -43.7, 1.6, 2.4); ctx.fillRect(3.4, -43.7, 1.6, 2.4); ctx.fillStyle = infected ? '#6b7456' : '#976f51'; ctx.fillRect(-1.2, -38, 3, 1.2); }
-    ctx.restore();
-    if (!infected && this.game) {
-      const job = this.game.jobs.find(j => j.members.some(m => m.id === s.id));
-      if (job) {
-        const names: Record<string,string> = { chop:'NEBANG',loot:'LOOTING',guard:'JAGA',attack:'LAWAN',forage:'MERAMU',craft:'MERAKIT',bandage:'MERAMU',build:'MEMBANGUN',repair:'PERBAIKI',heal:'MERAWAT',rest:'ISTIRAHAT',eat:'RANSUM' };
-        const swing = Math.sin(time * 7 + hash(s.id)) * .55;
-        if (['chop','attack','craft','build','repair'].includes(job.kind)) {
-          ctx.save();ctx.translate(12,-24);ctx.rotate(swing-.4);path(ctx,[{x:0,y:3},{x:10,y:-15}],C.wood,3);
-          polygon(ctx,[{x:7,y:-19},{x:19,y:-18},{x:16,y:-9},{x:7,y:-12}],job.kind==='attack'?'#c0c6bb':'#9daaa1');ctx.restore();
-          if (Math.sin(time*7)>0.7) { ctx.fillStyle='#e8cc81';for(let i=0;i<3;i++)ctx.fillRect(18+i*4,-26+i*5,2,2); }
-        } else if (job.kind==='heal' || job.kind==='bandage') { roundRect(ctx,10,-24,12,10,2,'#e4e6cb');ctx.fillStyle='#a66f59';ctx.fillRect(15,-23,2,8);ctx.fillRect(12,-20,8,2); }
-        else if (job.kind==='loot') { roundRect(ctx,12,-26,14,14,3,'#8e7855');path(ctx,[{x:14,y:-26},{x:21,y:-30},{x:25,y:-26}],'#c8b77c',2); }
-        roundRect(ctx,-28,6,56,13,4,'#183e34dc');ctx.fillStyle='#f6e6bc';ctx.font='bold 7px system-ui';ctx.textAlign='center';ctx.fillText(names[job.kind]||'BEKERJA',0,15);
-      }
-      const hp = this.game.crew.find(p => p.id === s.id)?.health;
-      if (hp !== undefined && hp<100) { roundRect(ctx,-13,-61,26,3,1,'#9d8d70');roundRect(ctx,-13,-61,26*hp/100,3,1,'#ba765d'); }
+  private drawActor(s: Survivor, time: number, walking: boolean, heading: number, own: boolean, infected=false, facing:Facing='front', working=false) {
+    const ctx=this.ctx,m=this.motions.get(s.id),stride=walking?Math.sin(infected?time*3.8:(m?.walked||0)*9):0;
+    shadow(ctx,1,0,walking?12:13,5,.18);
+    if(own){ctx.strokeStyle='#f7ce7b';ctx.lineWidth=2.4;ctx.beginPath();ctx.ellipse(0,1,18,7,0,0,Math.PI*2);ctx.stroke();}
+    const job=this.game?.jobs.find(j=>j.members.some(member=>member.id===s.id)&&j.endsAt>Date.now()+this.serverOffset);
+    const kind=job?.kind,kneel=(working&&['forage','heal','loot','rest','eat'].includes(kind||''))?.7:0;
+    drawCharacter(ctx,{look:s.appearance,style:s.customization,time,stride,facing,working,infected,kneel});
+    if(walking&&!infected){ctx.fillStyle='#dccb9b55';const step=(m?.walked||0)*4%1;ctx.beginPath();ctx.ellipse(-stride*2,3+step*7,2+step*2,1,0,0,Math.PI*2);ctx.fill();}
+    if(!infected&&working&&job){ctx.save();if(facing==='left')ctx.scale(-1,1);const swing=Math.sin(time*6+hash(s.id))*.65;
+      if(['chop','attack','craft','build','repair'].includes(job.kind)){ctx.save();ctx.translate(12,-24);ctx.rotate(swing-.4);path(ctx,[{x:0,y:3},{x:10,y:-15}],C.wood,3);polygon(ctx,[{x:7,y:-19},{x:19,y:-18},{x:16,y:-9},{x:7,y:-12}],job.kind==='attack'?'#c0c6bb':'#9daaa1');ctx.restore();}
+      else if(job.kind==='heal'||job.kind==='bandage'){roundRect(ctx,10,-24,12,10,2,'#e4e6cb');ctx.fillStyle='#a66f59';ctx.fillRect(15,-23,2,8);ctx.fillRect(12,-20,8,2);}
+      else if(job.kind==='loot'){roundRect(ctx,12,-19,14,14,3,'#8e7855');}
+      else if(job.kind==='forage'){path(ctx,[{x:10,y:-14},{x:18,y:-5}],'#4b7350',2);ctx.fillStyle='#84a669';ctx.beginPath();ctx.ellipse(17,-8,5,2,-.7,0,Math.PI*2);ctx.fill();}
+      else if(job.kind==='guard'){path(ctx,[{x:11,y:-30},{x:16,y:-42}],C.wood,3);roundRect(ctx,14,-44,11,6,2,'#51655a');}
+      else if(job.kind==='eat'){roundRect(ctx,11,-30,7,10,2,'#a67a55');}
+      ctx.restore();
     }
-    if (own) { ctx.fillStyle = '#f2c36f'; polygon(ctx, [{ x: -5, y: -65 }, { x: 5, y: -65 }, { x: 0, y: -59 }], '#f2c36f'); }
-    if (this.labels && !infected && !own) this.drawName(s.name, 0, -78, false);
+    if(!infected&&job){const names:Record<string,string>={chop:'NEBANG',loot:'LOOTING',guard:'JAGA',attack:'LAWAN',forage:'MERAMU',craft:'MERAKIT',bandage:'MERAMU',build:'MEMBANGUN',repair:'PERBAIKI',heal:'MERAWAT',rest:'ISTIRAHAT',eat:'RANSUM'};roundRect(ctx,-28,6,56,13,4,'#183e34dc');ctx.fillStyle='#f6e6bc';ctx.font='bold 7px system-ui';ctx.textAlign='center';ctx.fillText(walking?'MENUJU LOKASI':names[job.kind],0,15);}
+    const hp=this.game?.crew.find(p=>p.id===s.id)?.health;if(!infected&&hp!==undefined&&hp<100){roundRect(ctx,-13,-61,26,3,1,'#9d8d70');roundRect(ctx,-13,-61,26*hp/100,3,1,'#ba765d');}
+    if(own)polygon(ctx,[{x:-5,y:-65},{x:5,y:-65},{x:0,y:-59}],'#f2c36f');
+    if(this.labels&&!infected&&!own)this.drawName(s.name,0,-78,false);
   }
   private drawName(name: string, x: number, y: number, own = false) {
     const ctx = this.ctx; const display = name.length > 19 ? `${name.slice(0, 18)}…` : name;
@@ -269,6 +287,7 @@ export class WorldEngine {
     const ox = this.width / 2 + this.pan.x, oy = this.height * .55 + this.pan.y; ctx.translate(ox, oy); ctx.scale(this.zoom, this.zoom); this.hits = [];
     ctx.drawImage(this.terrain, -2100, -1300);
     const items: SceneItem[] = [];
+    const working=(kind:string)=>this.game?.jobs.some(j=>j.kind===kind&&j.members.some(member=>this.motions.get(member.id)?.working)) || false;
     for (const tree of this.trees) { const p = iso(tree.x, tree.y), w = 260 * tree.size, h = 315 * tree.size; items.push({ x: tree.x, y: tree.y, depth: tree.x + tree.y, draw: () => ctx.drawImage(this.treeSprites[tree.variant], p.x - w / 2, p.y - h * .908, w, h) }); }
     items.push({ x: 0, y: -1, depth: 1, selection: { kind: 'house', name: 'Rumah pertama' }, hit: { x: -214, y: -237, w: 428, h: 337 }, draw: () => { const p = iso(0, -1); ctx.drawImage(this.house, p.x - 350, p.y - 390); } });
     items.push({ x: -3, y: 2.8, depth: -.2, selection: { kind: 'crate', name: 'Gudang markas' }, hit: { x: -30, y: -36, w: 60, h: 52 }, draw: () => { const p = iso(-3, 2.8); ctx.save(); ctx.translate(p.x, p.y); this.drawCrate(); if ((this.game?.camp.wood || 0)>0) for(let i=0;i<3;i++) box(ctx,-.25+i*.16,0,.1,.13,.38,.5,C.timber,C.wood,'#80603c');ctx.restore(); } });
@@ -282,21 +301,28 @@ export class WorldEngine {
       const x=edge===0?-6.5:edge===3?6.5:i,y=edge===1?-6.5:edge===2?6.5:i,p=iso(x,y);
       items.push({x,y,depth:x+y,draw:()=>{ctx.save();ctx.translate(p.x,p.y);box(ctx,0,0,0,.11,.11,1.12,C.timber,C.wood,'#786141');for(const z of [.35,.78])path(ctx,[iso(0,0,z),iso(edge===0||edge===3?0:1,edge===0||edge===3?1:0,z)],'#b99a67',5);ctx.restore();}});
     }
-    const stationTree=iso(-6.7,.3);items.push({x:-6.7,y:.3,depth:-6.4,selection:{kind:'wood',name:'Area penebangan'},hit:{x:-60,y:-145,w:120,h:155},draw:()=>ctx.drawImage(this.treeSprites[2],stationTree.x-78,stationTree.y-173,156,190)});
-    items.push({x:5.5,y:2.7,depth:8.2,selection:{kind:'loot',name:'Rute looting'},hit:{x:-30,y:-40,w:60,h:52},draw:()=>{const p=iso(5.5,2.7);ctx.save();ctx.translate(p.x,p.y);box(ctx,-.4,-.3,0,.8,.6,.6,'#b7a372','#8d794b','#78653e');for(const x of [-.25,.25])box(ctx,x,-.31,0,.08,.64,.62,'#6c8475','#597064','#476156');roundRect(ctx,-4,-23,8,10,2,'#d9c780');ctx.restore();}});
+    const stationTree=iso(-6.7,.3);items.push({x:-6.7,y:.3,depth:-6.4,selection:{kind:'wood',name:'Area penebangan'},hit:{x:-60,y:-145,w:120,h:155},draw:()=>{ctx.save();ctx.translate(stationTree.x,stationTree.y);const chopping=working('chop');ctx.rotate(chopping?Math.sin(time*6)*.016:Math.sin(time*.7)*.003);ctx.drawImage(this.treeSprites[2],-78,-173,156,190);ctx.restore();if(chopping){for(let i=0;i<5;i++){const phase=(time*1.2+i*.2)%1;ctx.fillStyle='#d0b17b';ctx.fillRect(stationTree.x+phase*28-10,stationTree.y-20+phase*phase*24-i*2,3,2);}}}});
+    items.push({x:5.5,y:2.7,depth:8.2,selection:{kind:'loot',name:'Rute looting'},hit:{x:-30,y:-60,w:60,h:72},draw:()=>{const p=iso(5.5,2.7);ctx.save();ctx.translate(p.x,p.y);box(ctx,-.4,-.3,0,.8,.6,.6,'#b7a372','#8d794b','#78653e');for(const x of [-.25,.25])box(ctx,x,-.31,0,.08,.64,.62,'#6c8475','#597064','#476156');if(working('loot')){polygon(ctx,[iso(-.35,-.25,.61),iso(.35,-.25,.61),iso(.35,.25,.61),iso(-.35,.25,.61)],'#354c39');polygon(ctx,[iso(-.4,-.3,.6),iso(.4,-.3,.6),iso(.4,-.65,1.1),iso(-.4,-.65,1.1)],'#baab7b','#7b6d49',2);ctx.fillStyle='#e3ca76';ctx.fillRect(-9,-15+Math.sin(time*3)*2,6,4);}else roundRect(ctx,-4,-23,8,10,2,'#d9c780');ctx.restore();}});
     for (let i = 0; i < (this.game ? Math.min(6,Math.ceil(this.game.camp.enemyHp/16)) : 2); i++) { const x = -1 + i * 1.8 + Math.sin(time * .2 + i) * .13, y = (this.game?.camp.raidDeadline?-7.1:-8.15) - i * .2, p = iso(x, y); items.push({ x, y, depth: x + y, selection: { kind: 'zombie', id: `zombie-${i}`, name: 'Zombie di luar lahan' }, hit: { x: -16, y: -56, w: 32, h: 59 }, draw: () => { ctx.save(); ctx.translate(p.x, p.y); this.drawActor({ id: `zombie-${i}`, name: '', role: '', activity: '', appearance: 'clay', joinedDay: 1 }, time + i, true, 1, false, true); ctx.restore(); } }); }
-    let active = this.survivors;
+    this.fallen=this.fallen.filter(f=>performance.now()-f.at<1200);
+    for(const f of this.fallen){const age=(performance.now()-f.at)/1200,x=-1+f.index*1.8,y=-7.8-f.index*.2,p=iso(x,y);items.push({x,y,depth:x+y,draw:()=>{ctx.save();ctx.translate(p.x,p.y);ctx.globalAlpha=1-age;ctx.rotate(-Math.min(1,age*2)*1.4);drawCharacter(ctx,{infected:true,facing:'front',look:'clay'});ctx.restore();}});}
+    const damageAge=(performance.now()-this.damageAt)/1400;
+    if(this.damageAt&&damageAge<1){const p=iso(1,-7.5);ctx.save();ctx.globalAlpha=1-damageAge;ctx.fillStyle='#ae5c43';ctx.font='bold 14px system-ui';ctx.textAlign='center';ctx.fillText('-'+this.damageAmount+' HP',p.x,p.y-75-damageAge*25);ctx.restore();}
+    let active = this.game ? this.survivors : [];
     if (active.length > 29) { const start = Math.floor(time / 28) * 28 % active.length; active = [...active.slice(start), ...active.slice(0, start)].slice(0, 29); let reserved = 0; for (const id of [this.ownId, this.focusedId]) { const required = this.survivors.find(s => s.id === id); if (required && !active.some(s => s.id === required.id)) { active[active.length - 1 - reserved] = required; reserved++; } } }
-    for (const s of [this.arga(), ...active]) { const p = this.actorPosition(s, time), v = iso(p.x, p.y); const own = s.id === this.ownId; items.push({ x: p.x, y: p.y, depth: p.x + p.y + .15, selection: { kind: 'survivor', id: s.id, name: s.name }, hit: { x: -18, y: -61, w: 36, h: 65 }, draw: () => { ctx.save(); ctx.translate(v.x, v.y); this.drawActor(s, time, p.walking, p.heading, own); ctx.restore(); } }); }
+    for (const s of [this.arga(), ...active]) { const p = this.actorPosition(s, time), v = iso(p.x, p.y); const own = s.id === this.ownId; items.push({ x: p.x, y: p.y, depth: p.x + p.y + .15, selection: { kind: 'survivor', id: s.id, name: s.name }, hit: { x: -18, y: -61, w: 36, h: 65 }, draw: () => { ctx.save(); ctx.translate(v.x, v.y); this.drawActor(s, time, p.walking, p.heading, own, false, p.facing, p.working); ctx.restore(); } }); }
     items.sort((a, b) => a.depth - b.depth);
     for (const item of items) {
       const p = iso(item.x, item.y); const sx = ox + p.x * this.zoom, sy = oy + p.y * this.zoom;
       if (sx < -420 * this.zoom || sx > this.width + 420 * this.zoom || sy < -360 * this.zoom || sy > this.height + 360 * this.zoom) continue;
+      if(item.selection&&this.hovered===`${item.selection.kind}:${item.selection.id||item.selection.name}`){ctx.strokeStyle='#ebcc7eaa';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(p.x,p.y+4,item.selection.kind==='house'?105:28,item.selection.kind==='house'?37:11,0,0,Math.PI*2);ctx.stroke();}
       item.draw(); if (item.selection && item.hit) { const h = item.hit; this.hits.push({ selection: item.selection, x: sx + h.x * this.zoom - 6, y: sy + h.y * this.zoom - 6, w: h.w * this.zoom + 12, h: h.h * this.zoom + 12 }); }
     }
     const own = active.find(s => s.id === this.ownId);
     if (this.labels && own) { const p = this.actorPosition(own, time), v = iso(p.x, p.y); this.drawName(own.name, v.x, v.y - 78, true); }
+    this.finished=this.finished.filter(f=>performance.now()-f.at<2000);for(const f of this.finished){const p=iso(f.x,f.y),age=(performance.now()-f.at)/2000;ctx.save();ctx.globalAlpha=1-age;this.drawName('Selesai',p.x,p.y-95-age*25);ctx.restore();}
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    if(this.lastClick){const age=(performance.now()-this.lastClick.at)/650;if(age<1){ctx.strokeStyle=`rgba(245,218,146,${1-age})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(this.lastClick.x,this.lastClick.y,7+age*20,0,Math.PI*2);ctx.stroke();}else this.lastClick=null;}
     const vignette = ctx.createRadialGradient(this.width / 2, this.height * .5, this.width * .2, this.width / 2, this.height * .5, Math.max(this.width, this.height) * .85); vignette.addColorStop(0, 'rgba(231,235,196,0)'); vignette.addColorStop(1, 'rgba(206,220,181,.32)'); ctx.fillStyle = vignette; ctx.fillRect(0, 0, this.width, this.height);
   }
 }

@@ -1,6 +1,7 @@
 import { ACTIONS, actionRewards, effectiveEnergy, expertFor, type ActionKind, type Crew, type GameState, type Job } from "../src/survival-rules";
+import { normalizeStyle } from "../src/character-style";
 type DB = D1Database;
-type Row = { user_id: string; id: string; name: string; role: string; appearance: string; health: number; energy: number; energy_updated: number; xp: number };
+type Row = { user_id: string; id: string; name: string; role: string; appearance: string; customization: string; health: number; energy: number; energy_updated: number; xp: number };
 const reply = (data: unknown, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 
 export async function tick(db: DB, now = Date.now()) {
@@ -22,17 +23,17 @@ export async function gameSnapshot(db: DB, userId: string | null): Promise<GameS
   const now = Date.now(); await tick(db, now);
   const results = await db.batch([
     db.prepare("SELECT * FROM camp WHERE id=1"),
-    db.prepare("SELECT s.user_id,s.id,s.name,s.role,s.appearance,p.health,p.energy,p.energy_updated,p.xp FROM survivors s JOIN game_players p ON p.user_id=s.user_id ORDER BY s.created_at DESC LIMIT 200"),
-    db.prepare("SELECT j.id,j.kind,j.started_at,j.ends_at,j.target_name,s.id AS owner_id,s.name AS owner_name FROM jobs j JOIN survivors s ON s.user_id=j.owner_id WHERE j.status='active' ORDER BY CASE WHEN EXISTS(SELECT 1 FROM job_members m WHERE m.job_id=j.id AND m.user_id=? AND m.active=1) THEN 0 ELSE 1 END,j.started_at DESC LIMIT 60").bind(userId || ""),
+    db.prepare("SELECT s.user_id,s.id,s.name,s.role,s.appearance,s.customization,p.health,p.energy,p.energy_updated,p.xp FROM survivors s JOIN game_players p ON p.user_id=s.user_id ORDER BY s.created_at DESC LIMIT 200"),
+    db.prepare("SELECT j.id,j.kind,j.started_at,j.ends_at,j.target_name,t.id AS target_survivor_id,s.id AS owner_id,s.name AS owner_name FROM jobs j JOIN survivors s ON s.user_id=j.owner_id LEFT JOIN survivors t ON t.user_id=j.target_id WHERE j.status='active' ORDER BY CASE WHEN EXISTS(SELECT 1 FROM job_members m WHERE m.job_id=j.id AND m.user_id=? AND m.active=1) THEN 0 ELSE 1 END,j.started_at DESC LIMIT 60").bind(userId || ""),
     db.prepare("SELECT m.job_id,s.id,s.name,s.role FROM job_members m JOIN survivors s ON s.user_id=m.user_id WHERE m.active=1"),
     db.prepare("SELECT id,actor,message,created_at FROM game_feed ORDER BY id DESC LIMIT 30"),
-    db.prepare("SELECT s.user_id,s.id,s.name,s.role,s.appearance,p.health,p.energy,p.energy_updated,p.xp FROM survivors s JOIN game_players p ON p.user_id=s.user_id WHERE s.user_id=?").bind(userId || ""),
+    db.prepare("SELECT s.user_id,s.id,s.name,s.role,s.appearance,s.customization,p.health,p.energy,p.energy_updated,p.xp FROM survivors s JOIN game_players p ON p.user_id=s.user_id WHERE s.user_id=?").bind(userId || ""),
   ]);
   const c = results[0].results[0] as Record<string, number>;
   const members = results[3].results as { job_id: string; id: string; name: string; role: string }[];
-  const asCrew = (p: Row): Crew => ({ id: p.id, name: p.name, role: p.role, appearance: p.appearance, health: p.health, energy: effectiveEnergy(p.energy, p.energy_updated, now), xp: p.xp, activeJob: members.find(m => m.id === p.id)?.job_id || null });
+  const asCrew = (p: Row): Crew => ({ id: p.id, name: p.name, role: p.role, appearance: p.appearance, customization: normalizeStyle(p.customization), health: p.health, energy: effectiveEnergy(p.energy, p.energy_updated, now), xp: p.xp, activeJob: members.find(m => m.id === p.id)?.job_id || null });
   const own = results[5].results[0] as Row | undefined;
-  const jobs: Job[] = (results[2].results as { id: string; kind: ActionKind; started_at: number; ends_at: number; target_name: string | null; owner_id: string; owner_name: string }[]).map(j => ({ id: j.id, kind: j.kind, startedAt: j.started_at, endsAt: j.ends_at, targetName: j.target_name, ownerId: j.owner_id, ownerName: j.owner_name, members: members.filter(m => m.job_id === j.id).map(({ id, name, role }) => ({ id, name, role })) }));
+  const jobs: Job[] = (results[2].results as { id: string; kind: ActionKind; started_at: number; ends_at: number; target_name: string | null; target_survivor_id: string | null; owner_id: string; owner_name: string }[]).map(j => ({ id: j.id, kind: j.kind, startedAt: j.started_at, endsAt: j.ends_at, targetName: j.target_name, targetId: j.target_survivor_id || undefined, ownerId: j.owner_id, ownerName: j.owner_name, members: members.filter(m => m.job_id === j.id).map(({ id, name, role }) => ({ id, name, role })) }));
   return { serverTime: now, camp: { wood: c.wood, scrap: c.scrap, food: c.food, water: c.water, herbs: c.herbs, medkits: c.medkits, tools: c.tools, integrity: c.integrity, defense: c.defense, enemyHp: c.enemy_hp, wave: c.wave, raidDeadline: c.raid_deadline, nextRaid: c.next_raid, fenceWork: c.fence_work, fenceLevel: c.fence_level }, crew: (results[1].results as Row[]).map(asCrew), jobs, feed: (results[4].results as { id: number; actor: string; message: string; created_at: number }[]).map(f => ({ id: f.id, actor: f.actor, message: f.message, createdAt: f.created_at })), me: own ? asCrew(own) : null, activeJob: own ? members.find(m => m.id === own.id)?.job_id || null : null };
 }
 
@@ -65,10 +66,12 @@ export async function gameAction(db: DB, userId: string | null, body: Record<str
       ]);
       message = `${action.name} dimulai. Ajak teman membantu!`;
     } else if (body.action === "help") {
-      const job = await db.prepare("SELECT id,kind,owner_id,actor_name FROM jobs WHERE id=? AND status='active' AND ends_at>?").bind(String(body.jobId), now).first<{ id: string; kind: string; owner_id: string; actor_name: string }>();
+      const job = await db.prepare("SELECT id,kind,owner_id,actor_name,ends_at FROM jobs WHERE id=? AND status='active' AND ends_at>?").bind(String(body.jobId), now).first<{ id: string; kind: string; owner_id: string; actor_name: string; ends_at:number }>();
       if (!job) return reply({ error: "Kegiatan ini sudah selesai." }, 409);
       if (job.owner_id === userId) return reply({ error: "Kamu sudah memimpin kegiatan ini." }, 409);
-      const boost = expertFor(job.kind, player.role) ? 8000 : 5000;
+      const travelWindow=job.kind==='attack'?14000:10000;
+      if(job.ends_at-now<=travelWindow) return reply({error:"Teman sudah hampir selesai. Pilih kegiatan lain agar masih sempat berjalan ke lokasi."},409);
+      const boost = Math.min(expertFor(job.kind, player.role) ? 8000 : 5000,job.ends_at-now-travelWindow);
       await db.batch([
         db.prepare("INSERT INTO job_members(job_id,user_id,joined_at,energy_cost,boost) VALUES(?,?,?,?,?)").bind(job.id, userId, now, 8, boost),
         db.prepare("INSERT INTO game_feed(actor,message,created_at) VALUES(?,?,?)").bind(player.name, `Membantu ${job.actor_name}. Kegiatan lebih cepat dan hasil tim bertambah.`, now),

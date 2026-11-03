@@ -22,12 +22,12 @@ export function useSurvival(profileId: string | undefined, notify: (message: str
     return () => clearTimeout(timer);
   }, [ownJob?.id, ownJob?.endsAt, game?.serverTime, refreshGame]);
   const act = useCallback(async (payload: Record<string, unknown>) => {
-    if (locked.current) return; locked.current = true; sequence.current++; setBusy(true); setError("");
+    if (locked.current) return false; locked.current = true; sequence.current++; setBusy(true); setError("");
     try {
       const r = await fetch("/api/game", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const d = await r.json() as { game: GameState; error?: string; message: string }; if (!r.ok) throw new Error(d.error || "Kegiatan belum tersimpan.");
-      setGame({ ...d.game, clientReceivedAt: Date.now() }); notifyRef.current(d.message);
-    } catch(e) { setError(e instanceof Error ? e.message : "Kegiatan belum tersimpan."); }
+      setGame({ ...d.game, clientReceivedAt: Date.now() }); notifyRef.current(d.message); return true;
+    } catch(e) { setError(e instanceof Error ? e.message : "Kegiatan belum tersimpan."); return false; }
     finally { locked.current = false; setBusy(false); }
   }, []);
   return { game, error, busy, act, refreshGame };

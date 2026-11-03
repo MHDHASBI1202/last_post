@@ -1,0 +1,14 @@
+import { useEffect,useRef,useState } from "react";
+import { drawCharacter,normalizeStyle,STYLE_OPTIONS,type CharacterStyle,type Facing } from "./character-style";
+export function CharacterAvatar({look="amber",customization,large=false,facing="front",animated=false}:{look?:string;customization?:unknown;large?:boolean;facing?:Facing;animated?:boolean}) {
+  const ref=useRef<HTMLCanvasElement>(null);
+  useEffect(()=>{const c=ref.current;if(!c)return;const g=c.getContext("2d");if(!g)return;let frame=0,last=0;
+    const draw=(t:number)=>{if(t-last>40 || !animated){g.setTransform(2,0,0,2,0,0);g.clearRect(0,0,160,180);g.fillStyle="#163e3524";g.beginPath();g.ellipse(80,162,32,7,0,0,Math.PI*2);g.fill();g.save();g.translate(80,163);g.scale(2.35,2.35);drawCharacter(g,{look,style:customization,facing,time:animated?t/1000:0});g.restore();last=t;}if(animated)frame=requestAnimationFrame(draw);};draw(0);return()=>cancelAnimationFrame(frame);
+  },[look,customization,facing,animated]);
+  return <canvas width={320} height={360} ref={ref} aria-label="Karakter penyintas" className={large?"avatar large":"avatar"}/>;
+}
+export default function CharacterCustomizer({value,onChange,look}:{value:CharacterStyle;onChange:(style:CharacterStyle)=>void;look:string}) {
+  const [facing,setFacing]=useState<Facing>("front");
+  const labels:Record<keyof CharacterStyle,string>={skin:"Warna kulit",hair:"Gaya rambut",hairColor:"Warna rambut",hat:"Penutup kepala",accessory:"Aksesori wajah",backpack:"Tas",pants:"Warna celana"};
+  return <section className="character-customizer"><div className="customizer-preview"><span className="eyebrow">KARAKTER PILIHANMU</span><CharacterAvatar look={look} customization={value} large facing={facing} animated/><div className="avatar-views" role="group" aria-label="Arah pratinjau karakter">{([["front","Depan"],["back","Belakang"]] as const).map(([id,label])=><button type="button" key={id} aria-pressed={facing===id} onClick={()=>setFacing(id)}>{label}</button>)}</div></div><div className="customizer-fields">{(Object.keys(STYLE_OPTIONS) as (keyof CharacterStyle)[]).map(key=><label key={key}>{labels[key]}<select aria-label={labels[key]} value={value[key]} onChange={e=>onChange(normalizeStyle({...value,[key]:e.target.value}))}>{Object.entries(STYLE_OPTIONS[key]).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>)}</div><p className="fine-print">Penampilan ini ikut tersimpan, tampil di peta, kartu, dan gambar kartu yang kamu unduh.</p></section>;
+}

@@ -1,9 +1,10 @@
 import { hashSecret, isSameOrigin, randomSecret, sessionCookie, sessionToken, SESSION_DAYS, validateProfile } from "./security";
 import { gameAction, gameSnapshot } from "./survival";
+import { normalizeStyle, validateStyle } from "../src/character-style";
 
 interface Env { DB: D1Database; ASSETS: Fetcher }
-type Profile = { id: string; user_id: string; code: string; name: string; role: string; specialty: string; activity: string; appearance: string; joined_day: number };
-const publicProfile = (p: Profile) => ({ id: p.id, code: p.code, name: p.name, role: p.role, specialty: p.specialty, activity: p.activity, appearance: p.appearance, joinedDay: p.joined_day });
+type Profile = { id: string; user_id: string; code: string; name: string; role: string; specialty: string; activity: string; appearance: string; joined_day: number; customization: string };
+const publicProfile = (p: Profile) => ({ id: p.id, code: p.code, name: p.name, role: p.role, specialty: p.specialty, activity: p.activity, appearance: p.appearance, joinedDay: p.joined_day, customization: normalizeStyle(p.customization) });
 function json(data: unknown, status = 200, cookie?: string) {
   return Response.json(data, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin", ...(cookie ? { "Set-Cookie": cookie } : {}) } });
 }
@@ -112,8 +113,10 @@ export default {
       if (body.action !== undefined) return json({ error: "Aksi tidak dikenal." }, 400);
       let data: ReturnType<typeof validateProfile>;
       try { data = validateProfile(body); } catch (e) { return json({ error: (e as Error).message }, 400); }
+      let customization: string;
+      try { customization = JSON.stringify(body.customization === undefined ? normalizeStyle(p?.customization) : validateStyle(body.customization)); } catch(e) { return json({error:(e as Error).message},400); }
       if (p && id) {
-        await db.prepare("UPDATE survivors SET name=?,specialty=?,role=?,appearance=? WHERE user_id=?").bind(data.name, data.specialty, data.role, data.appearance, id).run();
+        await db.prepare("UPDATE survivors SET name=?,specialty=?,role=?,appearance=?,customization=? WHERE user_id=?").bind(data.name, data.specialty, data.role, data.appearance, customization, id).run();
         return await me(db, id);
       }
       if (!await throttle(request, db, "join", 60)) return json({ error: "Batas pendaftaran jaringan ini tercapai. Coba lagi satu jam lagi." }, 429);
@@ -121,7 +124,7 @@ export default {
       await db.batch([
         db.prepare("INSERT INTO accounts (id,recovery_hash) VALUES (?,?)").bind(id, await hashSecret(recoveryKey)),
         db.prepare("INSERT INTO sessions (token_hash,account_id,expires_at) VALUES (?,?,?)").bind(await hashSecret(token), id, Date.now() + SESSION_DAYS * 86400000),
-        db.prepare("INSERT INTO survivors (id,user_id,code,name,role,specialty,appearance,created_at) VALUES (?,?,?,?,?,?,?,?)").bind(crypto.randomUUID(), id, "PT-" + randomSecret(4).toUpperCase(), data.name, data.role, data.specialty, data.appearance, Date.now()),
+        db.prepare("INSERT INTO survivors (id,user_id,code,name,role,specialty,appearance,created_at,customization) VALUES (?,?,?,?,?,?,?,?,?)").bind(crypto.randomUUID(), id, "PT-" + randomSecret(4).toUpperCase(), data.name, data.role, data.specialty, data.appearance, Date.now(), customization),
       ]);
       ctx.waitUntil(Promise.all([
         db.prepare("DELETE FROM sessions WHERE expires_at<?").bind(Date.now()).run(),
