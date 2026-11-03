@@ -1,3 +1,4 @@
+import { worldLight } from "./world-time";
 import type { GameState } from "./survival-rules";
 import { drawCharacter,type CharacterStyle,type Facing } from "./character-style";
 import { findRoute,followRoute,routeDistance,walkable,type WorldPoint } from "./world-navigation";
@@ -41,6 +42,8 @@ export class WorldEngine {
   private game: GameState | null = null;
   private motions=new Map<string,Motion>();
   private serverOffset=0;
+  private worldEpoch=Date.now(); private worldMono=performance.now();
+  setWorldTime(epoch:number){this.worldEpoch=epoch;this.worldMono=performance.now();}
   private hovered: string | null=null;
   private lastClick:{x:number;y:number;at:number}|null=null;
   private fallen:{index:number;at:number}[]=[];
@@ -318,11 +321,14 @@ export class WorldEngine {
       if(item.selection&&this.hovered===`${item.selection.kind}:${item.selection.id||item.selection.name}`){ctx.strokeStyle='#ebcc7eaa';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(p.x,p.y+4,item.selection.kind==='house'?105:28,item.selection.kind==='house'?37:11,0,0,Math.PI*2);ctx.stroke();}
       item.draw(); if (item.selection && item.hit) { const h = item.hit; this.hits.push({ selection: item.selection, x: sx + h.x * this.zoom - 6, y: sy + h.y * this.zoom - 6, w: h.w * this.zoom + 12, h: h.h * this.zoom + 12 }); }
     }
+    const light=worldLight(this.worldEpoch+performance.now()-this.worldMono);
+    ctx.save();ctx.setTransform(this.dpr,0,0,this.dpr,0,0);ctx.fillStyle=light.tint;ctx.fillRect(0,0,this.width,this.height);ctx.restore();
+    if(light.lamps>.001){for(const point of [{x:1.3,y:1.2,z:.7},{x:-1.4,y:3.1,z:.6}]){const p=iso(point.x,point.y,point.z);ctx.save();ctx.globalAlpha=light.lamps;const glow=ctx.createRadialGradient(p.x,p.y,1,p.x,p.y,65);glow.addColorStop(0,'#ffdc9c80');glow.addColorStop(1,'#ffce7000');ctx.fillStyle=glow;ctx.fillRect(p.x-65,p.y-65,130,130);roundRect(ctx,p.x-3,p.y-5,6,9,2,'#ffdf9b');ctx.restore();}}
     const own = active.find(s => s.id === this.ownId);
     if (this.labels && own) { const p = this.actorPosition(own, time), v = iso(p.x, p.y); this.drawName(own.name, v.x, v.y - 78, true); }
     this.finished=this.finished.filter(f=>performance.now()-f.at<2000);for(const f of this.finished){const p=iso(f.x,f.y),age=(performance.now()-f.at)/2000;ctx.save();ctx.globalAlpha=1-age;this.drawName('Selesai',p.x,p.y-95-age*25);ctx.restore();}
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     if(this.lastClick){const age=(performance.now()-this.lastClick.at)/650;if(age<1){ctx.strokeStyle=`rgba(245,218,146,${1-age})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(this.lastClick.x,this.lastClick.y,7+age*20,0,Math.PI*2);ctx.stroke();}else this.lastClick=null;}
-    const vignette = ctx.createRadialGradient(this.width / 2, this.height * .5, this.width * .2, this.width / 2, this.height * .5, Math.max(this.width, this.height) * .85); vignette.addColorStop(0, 'rgba(231,235,196,0)'); vignette.addColorStop(1, 'rgba(206,220,181,.32)'); ctx.fillStyle = vignette; ctx.fillRect(0, 0, this.width, this.height);
+    const vignette = ctx.createRadialGradient(this.width / 2, this.height * .5, this.width * .2, this.width / 2, this.height * .5, Math.max(this.width, this.height) * .85); vignette.addColorStop(0, 'rgba(231,235,196,0)'); vignette.addColorStop(1, `rgba(18,34,45,${.05+light.lamps*.16})`); ctx.fillStyle = vignette; ctx.fillRect(0, 0, this.width, this.height);
   }
 }

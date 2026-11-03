@@ -1,11 +1,14 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Map, Radio, IdCard, Hammer, UserRound, Plus, Minus, LocateFixed, ArrowUpRight, X, ArrowRight, Shield, Droplets, Package, Check, ChevronRight, Download, Copy, Edit3, Leaf, Footprints, HeartPulse, Wrench, Compass, Volume2, VolumeX, LoaderCircle, Users, Sun, House, Eye, CheckCircle2 } from "lucide-react";
+import { Map, Radio, IdCard, Hammer, UserRound, Plus, Minus, LocateFixed, ArrowUpRight, X, ArrowRight, Shield, Droplets, Package, Check, ChevronRight, Download, Copy, Edit3, Leaf, Footprints, HeartPulse, Wrench, Compass, Volume2, VolumeX, LoaderCircle, Users, Sun, Moon, Sunrise, Sunset, House, Eye, CheckCircle2 } from "lucide-react";
 import { WorldEngine, type Survivor } from "./world-engine";
 import SurvivalPanel from "./survival-panel";
 import { useSurvival } from "./use-survival";
 import CharacterCustomizer, { CharacterAvatar as Avatar } from "./character-avatar";
 import { JACKETS,JACKET_LABELS,DEFAULT_STYLE,normalizeStyle,drawCharacter,type CharacterStyle } from "./character-style";
+
+import { worldTime } from "./world-time";
+import { useWorldClock } from "./use-world-clock";
 
 type Tab = "peta" | "aksi" | "radio" | "kartu" | "rencana" | "akun";
 type Profile = Survivor & { code: string; specialty: string; createdAt?: number };
@@ -34,6 +37,10 @@ export default function Experience() {
   const activeCard = shared || profile;
   function notify(message: string) { setToast(message); }
   const survival = useSurvival(profile?.id, notify);
+  const worldNow=useWorldClock(survival.game?.serverTime,survival.game?.clientReceivedAt);
+  const clock=worldTime(worldNow);
+  const PhaseIcon=({pagi:Sunrise,siang:Sun,sore:Sunset,malam:Moon})[clock.phase];
+  useEffect(()=>{engine.current?.setWorldTime(worldNow);},[worldNow]);
   const [focusCrew, setFocusCrew] = useState<string | undefined>();
   async function quickInteract(){
     if(!selected)return; if(!profile){open("kartu");return;}
@@ -143,7 +150,7 @@ export default function Experience() {
   useEffect(() => { if (loaded && new URLSearchParams(window.location.search).has("gabung")) setTab("kartu"); }, [loaded]);
 
   return <main className="app-shell">
-    <header className="topbar"><Brand/><div className="episode-pill"><span/> DAY 01 <b>Awal kehidupan baru</b></div><div className="topbar-right"><span className="phase"><Sun size={15}/> Sore di markas</span><button className="desktop-profile" onClick={() => open("kartu")}><Avatar look={profile?.appearance} customization={profile?.customization}/><span>{profile?.name || "Jadi penyintas"}</span><ChevronRight size={16}/></button></div></header>
+    <header className="topbar"><Brand/><div className="episode-pill"><span/> DAY 01 <b>Awal kehidupan baru</b></div><div className="world-clock" data-phase={clock.phase} title="Waktu markas: WIB (UTC+7). Pagi 05–11, siang 11–15, sore 15–18, malam 18–05."><PhaseIcon size={19}/><div><time dateTime={new Date(worldNow).toISOString()}>{clock.clock}<small>WIB</small></time><span>{clock.phase} · {clock.date}</span></div></div><div className="topbar-right"><button className="desktop-profile" onClick={() => open("kartu")}><Avatar look={profile?.appearance} customization={profile?.customization}/><span>{profile?.name || "Jadi penyintas"}</span><ChevronRight size={16}/></button></div></header>
     <div className="workspace">
       <aside className="journal-sidebar"><div className="journal-main"><div className="section-label"><span className="status-dot"/> CATATAN HARI PERTAMA</div><h1>Kita mulai lagi.<br/><em>Bersama.</em></h1><p className="intro-copy">Satu rumah. Lahan kosong.<br/>Dan kesempatan untuk hidup lagi.</p>
         <div className="population"><div className="population-icon"><Users size={24}/></div><div><strong>{loaded ? world.count.toLocaleString("id-ID") : "—"}</strong><span>penyintas di dunia ini</span></div><span className="live-mark">DAY 1</span></div>

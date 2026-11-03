@@ -149,3 +149,5 @@ Database Sites yang dipakai pratinjau awal tidak otomatis dibawa ke Cloudflare m
 Tidak ada API key, credential, database pengguna, aset video, atau audio pribadi dalam repo ini.
 
 Kustomisasi karakter: laki-laki/perempuan, 8 warna kulit, 12 gaya rambut, 10 warna rambut, 10 penutup kepala, 12 aksesori wajah, 8 pilihan tas (termasuk tanpa tas), 12 warna celana, dan 12 warna jaket. Semua pilihan berlaku untuk kedua gender tanpa perbedaan kemampuan. Penampilan tersimpan di profil, peta, serta kartu; profil lama memakai gender laki-laki tanpa mengubah pilihannya.
+
+Jam dunia mengikuti WIB (Asia/Jakarta, UTC+7), disinkronkan dengan waktu server dan berjalan tiap detik. Pagi 05.00–11.00, siang 11.00–15.00, sore 15.00–18.00, malam 18.00–05.00. Pencahayaan peta bertransisi bertahap, lampu menyala saat gelap. DAY tetap mengikuti episode cerita.
