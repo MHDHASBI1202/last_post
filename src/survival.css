@@ -9,3 +9,5 @@
 
 .world-clock{display:flex;align-items:center;gap:9px;color:#6f795e;flex-shrink:0}.world-clock time{display:block;font-size:17px;font-weight:750;letter-spacing:.5px;font-variant-numeric:tabular-nums;color:var(--ink)}.world-clock time small{font-size:9px;margin-left:6px;letter-spacing:0}.world-clock span{display:block;font-size:10px;text-transform:capitalize;margin-top:3px}.world-clock[data-phase=malam]>svg{color:#6a7ca3}.world-clock[data-phase=sore]>svg{color:#b77942}
 @media(max-width:760px){.topbar>.episode-pill{display:none}.world-clock{gap:7px}.world-clock time{font-size:16px}.world-clock span{font-size:9px}.world-clock>svg{width:17px}.topbar{gap:8px}}
+
+.arga-support{display:flex;gap:11px;background:#eef0de;border:1px solid #d6dfc0;border-radius:13px;padding:14px;margin:12px 0 18px;color:#476044}.arga-support>svg{flex-shrink:0;margin-top:2px}.arga-support strong{font-size:13px}.arga-support p{font-size:12px;line-height:1.6;margin:5px 0}.arga-support small{font-size:10px;line-height:1.5;display:block;color:#78836c}

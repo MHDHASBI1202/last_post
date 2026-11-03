@@ -8,6 +8,7 @@ function sql(command) {
 }
 async function call(path,body,cookie) { const r=await fetch(base+path,{method:body?"POST":"GET",headers:{Origin:base,...(body?{"Content-Type":"application/json"}:{}),...(cookie?{Cookie:cookie}:{})},...(body?{body:JSON.stringify(body)}:{})});return{status:r.status,data:await r.json(),cookie:r.headers.get("set-cookie")?.split(";")[0]}; }
 async function register(name,role) {const r=await call("/api/me",{name,role,appearance:"teal"});assert.equal(r.status,200);return{cookie:r.cookie,id:r.data.profile.id};}
+sql("UPDATE camp SET arga_next_attack="+(Date.now()+3600000));
 const first=await register("Tes Kayu","perintis"), second=await register("Tes Penjaga","penjaga"), medic=await register("Tes Medis","medis");
 const act=(p,body)=>call("/api/game",body,p.cookie), read=(p)=>call("/api/game",null,p?.cookie);
 const finish=(id)=>{assert.match(id,/^[a-f0-9-]{36}$/);sql(`UPDATE jobs SET ends_at=${Date.now()-1} WHERE id='${id}' AND status='active'`);};
@@ -45,3 +46,23 @@ sql("UPDATE camp SET next_raid="+(Date.now()-1000)+",raid_deadline=0");
 const wave=(await read(first)).data;assert.ok(wave.camp.raidDeadline>Date.now());assert.ok(wave.camp.enemyHp>0);
 assert.ok(!JSON.stringify(wave).includes("user_id"));
 console.log("PASS: raids settle once across clients, next wave starts, private identity stays private.");
+
+// Arga settles one shared hit, even when clients poll concurrently.
+sql("UPDATE camp SET enemy_hp=16,raid_deadline=0,next_raid="+(Date.now()+900000)+",arga_started_at="+(Date.now()-20000)+",arga_next_attack="+(Date.now()-1000)+",arga_last_attack=0");
+const help=await Promise.all([read(first),read(second)]);for(const result of help){assert.equal(result.data.camp.enemyHp,14);assert.ok(result.data.arga.lastAttackAt>0);assert.equal(result.data.arga.active,true);}
+assert.equal((await read(first)).data.camp.enemyHp,14);
+// Catch-up is bounded by enemy HP; clearing ends the raid and records one public message.
+sql("UPDATE camp SET enemy_hp=2,raid_deadline="+(Date.now()+60000)+",arga_next_attack="+(Date.now()-1000));
+const cleared=await Promise.all([read(first),read(second)]);for(const result of cleared){assert.equal(result.data.camp.enemyHp,0);assert.equal(result.data.camp.raidDeadline,0);assert.equal(result.data.arga.active,false);}
+const count=JSON.parse((await (await fetch(base+"/api/world")).text())).registered;
+sql("UPDATE camp SET next_raid="+(Date.now()-1000)+",raid_deadline=0");
+const scaled=(await read(first)).data;assert.equal(scaled.camp.enemyHp,16*(1+Math.min(23,Math.floor(count/3))));
+assert.ok(scaled.arga.nextAttackAt>scaled.serverTime+19000);
+console.log("PASS: Arga auto damage settles once, stops after clearing, and wave scales with registered players.");
+
+// A delayed poll settles missed intervals once, without running past a raid deadline.
+sql("UPDATE camp SET enemy_hp=32,raid_deadline=0,arga_next_attack="+(Date.now()-25000));
+const catchup=await Promise.all([read(first),read(second)]);for(const r of catchup)assert.equal(r.data.camp.enemyHp,26);
+sql("UPDATE camp SET enemy_hp=40,integrity=100,defense=0,fence_level=0,raid_deadline="+(Date.now()-1000)+",arga_next_attack="+(Date.now()+60000));
+const expired=(await read(first)).data;assert.equal(expired.camp.integrity,90);assert.equal(expired.camp.enemyHp,0);
+console.log("PASS: delayed Arga intervals settle once; no attack occurs after the raid deadline.");

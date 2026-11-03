@@ -1,3 +1,4 @@
+import { ARGA_DAMAGE,ARGA_INTERVAL_MS,ARGA_TRAVEL_MS,ZOMBIE_HP } from "../src/threat-rules";
 import { ACTIONS, actionRewards, effectiveEnergy, expertFor, type ActionKind, type Crew, type GameState, type Job } from "../src/survival-rules";
 import { normalizeStyle } from "../src/character-style";
 type DB = D1Database;
@@ -7,12 +8,17 @@ const reply = (data: unknown, status = 200) => Response.json(data, { status, hea
 export async function tick(db: DB, now = Date.now()) {
   // D1 batches are transactional. A conditional status transition awards a job once,
   // even when two browsers settle the same task concurrently.
+  const cutoff=`MIN(${Math.floor(now)},CASE WHEN raid_deadline>0 THEN raid_deadline ELSE ${Math.floor(now)} END)`;
+  const hits=`MIN(CAST((enemy_hp+${ARGA_DAMAGE-1})/${ARGA_DAMAGE} AS INTEGER),CAST((${cutoff}-arga_next_attack)/${ARGA_INTERVAL_MS} AS INTEGER)+1)`;
   await db.batch([
     db.prepare("UPDATE jobs SET status='done' WHERE status='active' AND ends_at<=MIN(?,COALESCE((SELECT NULLIF(raid_deadline,0) FROM camp WHERE raid_deadline<=?),?))").bind(now, now, now),
+    db.prepare("UPDATE camp SET arga_started_at=?,arga_next_attack=? WHERE enemy_hp>0 AND arga_next_attack=0").bind(now,now+ARGA_TRAVEL_MS),
+    db.prepare(`INSERT INTO game_feed(actor,message,created_at) SELECT 'Arga','Zombie terakhir tumbang. Perimeter aman untuk sementara.',? FROM camp WHERE enemy_hp>0 AND arga_next_attack>0 AND arga_next_attack<=${cutoff} AND enemy_hp<=${hits}*${ARGA_DAMAGE}`).bind(now),
+    db.prepare(`UPDATE camp SET enemy_hp=MAX(0,enemy_hp-${hits}*${ARGA_DAMAGE}),arga_last_attack=arga_next_attack+(${hits}-1)*${ARGA_INTERVAL_MS},arga_next_attack=arga_next_attack+${hits}*${ARGA_INTERVAL_MS},raid_deadline=CASE WHEN enemy_hp<=${hits}*${ARGA_DAMAGE} THEN 0 ELSE raid_deadline END WHERE enemy_hp>0 AND arga_next_attack>0 AND arga_next_attack<=${cutoff}`),
     db.prepare("INSERT INTO game_feed(actor,message,created_at) SELECT 'Radio markas','Serangan zombie berakhir. Kerusakan markas: '||MAX(0,CAST((enemy_hp+3)/4 AS INTEGER)-defense-fence_level*4)||'.',? FROM camp WHERE raid_deadline>0 AND raid_deadline<=?").bind(now, now),
     db.prepare("UPDATE camp SET integrity=MAX(0,integrity-MAX(0,CAST((enemy_hp+3)/4 AS INTEGER)-defense-fence_level*4)),enemy_hp=0,defense=0,raid_deadline=0 WHERE raid_deadline>0 AND raid_deadline<=?").bind(now),
     db.prepare("INSERT INTO game_feed(actor,message,created_at) SELECT 'Radio markas','Gelombang zombie mendekat! Bantu jaga atau lawan bersama.',? FROM camp WHERE next_raid<=? AND raid_deadline=0").bind(now, now),
-    db.prepare("UPDATE camp SET wave=wave+1,enemy_hp=40+MIN(wave,10)*8,raid_deadline=?+120000,next_raid=?+900000 WHERE next_raid<=? AND raid_deadline=0").bind(now, now, now),
+    db.prepare(`UPDATE camp SET wave=wave+1,enemy_hp=${ZOMBIE_HP}*(1+MIN(23,(SELECT COUNT(*) FROM survivors)/3)),arga_started_at=?,arga_next_attack=?+${ARGA_TRAVEL_MS},raid_deadline=?+120000,next_raid=?+900000 WHERE next_raid<=? AND raid_deadline=0`).bind(now, now, now, now, now),
     db.prepare("UPDATE jobs SET status='done' WHERE status='active' AND ends_at<=?").bind(now),
     // Keep a bounded public activity journal, without deleting any profiles or jobs.
     db.prepare("DELETE FROM game_feed WHERE id < (SELECT COALESCE(MAX(id),0)-200 FROM game_feed)"),
@@ -34,7 +40,7 @@ export async function gameSnapshot(db: DB, userId: string | null): Promise<GameS
   const asCrew = (p: Row): Crew => ({ id: p.id, name: p.name, role: p.role, appearance: p.appearance, customization: normalizeStyle(p.customization), health: p.health, energy: effectiveEnergy(p.energy, p.energy_updated, now), xp: p.xp, activeJob: members.find(m => m.id === p.id)?.job_id || null });
   const own = results[5].results[0] as Row | undefined;
   const jobs: Job[] = (results[2].results as { id: string; kind: ActionKind; started_at: number; ends_at: number; target_name: string | null; target_survivor_id: string | null; owner_id: string; owner_name: string }[]).map(j => ({ id: j.id, kind: j.kind, startedAt: j.started_at, endsAt: j.ends_at, targetName: j.target_name, targetId: j.target_survivor_id || undefined, ownerId: j.owner_id, ownerName: j.owner_name, members: members.filter(m => m.job_id === j.id).map(({ id, name, role }) => ({ id, name, role })) }));
-  return { serverTime: now, camp: { wood: c.wood, scrap: c.scrap, food: c.food, water: c.water, herbs: c.herbs, medkits: c.medkits, tools: c.tools, integrity: c.integrity, defense: c.defense, enemyHp: c.enemy_hp, wave: c.wave, raidDeadline: c.raid_deadline, nextRaid: c.next_raid, fenceWork: c.fence_work, fenceLevel: c.fence_level }, crew: (results[1].results as Row[]).map(asCrew), jobs, feed: (results[4].results as { id: number; actor: string; message: string; created_at: number }[]).map(f => ({ id: f.id, actor: f.actor, message: f.message, createdAt: f.created_at })), me: own ? asCrew(own) : null, activeJob: own ? members.find(m => m.id === own.id)?.job_id || null : null };
+  return { serverTime: now, arga:{active:c.enemy_hp>0,startedAt:c.arga_started_at,nextAttackAt:c.arga_next_attack,lastAttackAt:c.arga_last_attack,damage:ARGA_DAMAGE,intervalMs:ARGA_INTERVAL_MS}, camp: { wood: c.wood, scrap: c.scrap, food: c.food, water: c.water, herbs: c.herbs, medkits: c.medkits, tools: c.tools, integrity: c.integrity, defense: c.defense, enemyHp: c.enemy_hp, wave: c.wave, raidDeadline: c.raid_deadline, nextRaid: c.next_raid, fenceWork: c.fence_work, fenceLevel: c.fence_level }, crew: (results[1].results as Row[]).map(asCrew), jobs, feed: (results[4].results as { id: number; actor: string; message: string; created_at: number }[]).map(f => ({ id: f.id, actor: f.actor, message: f.message, createdAt: f.created_at })), me: own ? asCrew(own) : null, activeJob: own ? members.find(m => m.id === own.id)?.job_id || null : null };
 }
 
 export async function gameAction(db: DB, userId: string | null, body: Record<string, unknown>) {

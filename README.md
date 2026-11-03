@@ -151,3 +151,5 @@ Tidak ada API key, credential, database pengguna, aset video, atau audio pribadi
 Kustomisasi karakter: laki-laki/perempuan, 8 warna kulit, 12 gaya rambut, 10 warna rambut, 10 penutup kepala, 12 aksesori wajah, 8 pilihan tas (termasuk tanpa tas), 12 warna celana, dan 12 warna jaket. Semua pilihan berlaku untuk kedua gender tanpa perbedaan kemampuan. Penampilan tersimpan di profil, peta, serta kartu; profil lama memakai gender laki-laki tanpa mengubah pilihannya.
 
 Jam dunia mengikuti WIB (Asia/Jakarta, UTC+7), disinkronkan dengan waktu server dan berjalan tiap detik. Pagi 05.00–11.00, siang 11.00–15.00, sore 15.00–18.00, malam 18.00–05.00. Pencahayaan peta bertransisi bertahap, lampu menyala saat gelap. DAY tetap mengikuti episode cerita.
+
+Arga ikut melawan otomatis: 2 damage tiap 12 detik setelah 20 detik perjalanan. Hasil dihitung sekali di server untuk semua pengunjung, termasuk penyelesaian interval tertinggal hingga batas waktu serangan. Gelombang dimulai dari 1 zombie (16 HP), bertambah 1 per 3 pemain terdaftar, maksimum 24. Gelombang yang sudah berjalan tidak bertambah mendadak ketika pemain baru mendaftar.

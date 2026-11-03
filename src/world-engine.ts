@@ -1,5 +1,6 @@
+import { visibleZombieCount,zombiePosition } from "./threat-rules";
 import { worldLight } from "./world-time";
-import type { GameState } from "./survival-rules";
+import type { GameState,Job } from "./survival-rules";
 import { drawCharacter,type CharacterStyle,type Facing } from "./character-style";
 import { findRoute,followRoute,routeDistance,walkable,type WorldPoint } from "./world-navigation";
 export type Survivor = { id: string; name: string; role: string; activity: string; appearance: string; joinedDay: number; customization?: CharacterStyle };
@@ -70,7 +71,7 @@ export class WorldEngine {
   setSurvivors(list: Survivor[], ownId?: string) { this.survivors = list.filter((s, i, arr) => s.id && arr.findIndex(v => v.id === s.id) === i); this.ownId = ownId; }
   setGameState(game: GameState) {
     if(this.game){const old=this.game.camp.enemyHp,newHp=game.camp.enemyHp;
-      if(newHp<old){this.damageAt=performance.now();this.damageAmount=old-newHp;for(let i=Math.min(6,Math.ceil(newHp/16));i<Math.min(6,Math.ceil(old/16));i++)this.fallen.push({index:i,at:performance.now()});}
+      if(newHp<old){this.damageAt=performance.now();this.damageAmount=old-newHp;for(let i=visibleZombieCount(newHp);i<visibleZombieCount(old);i++)this.fallen.push({index:i,at:performance.now()});}
       for(const j of this.game.jobs)if(j.endsAt<=game.serverTime&&!game.jobs.some(n=>n.id===j.id)){const m=this.motions.get(j.ownerId);if(m)this.finished.push({x:m.x,y:m.y,at:performance.now()});}
     }
     this.game = game; this.serverOffset=game.serverTime-(game.clientReceivedAt || Date.now());
@@ -223,6 +224,11 @@ export class WorldEngine {
     const ctx = this.ctx; const p = iso(0, 0, .44); roundRect(ctx, p.x - 12, p.y - 11, 24, 16, 3, '#386c62', '#244e47');
     roundRect(ctx, p.x - 9, p.y - 8, 11, 10, 1, '#1f3f3c'); ctx.fillStyle = '#cbb170'; ctx.fillRect(p.x + 4, p.y - 7, 5, 3); ctx.strokeStyle = '#81968b'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(p.x + 8, p.y - 11); ctx.lineTo(p.x + 13, p.y - 33); ctx.stroke();
   }
+  private actorJob(id:string):Job|undefined {
+    const now=Date.now()+this.serverOffset;
+    if(id==='arga'&&this.game?.arga?.active&&this.game.camp.enemyHp>0)return{id:'arga-defense:'+this.game.camp.wave,kind:'attack',ownerId:'arga',ownerName:'Arga',targetName:null,startedAt:this.game.arga.startedAt,endsAt:this.game.camp.raidDeadline||now+60000,members:[{id:'arga',name:'Arga',role:'penjaga'}]};
+    return this.game?.jobs.find(j=>j.members.some(member=>member.id===id)&&j.endsAt>now);
+  }
   private actorPosition(s: Survivor, t: number) {
     const seed=hash(s.id),phase=(seed%1000)/1000,spawn={x:((seed%9)-4)*.72,y:4+(seed%3)*.48};
     let m=this.motions.get(s.id);const fresh=!m;
@@ -236,12 +242,12 @@ export class WorldEngine {
       if(Math.abs(sx)+Math.abs(sy)>.001)m.facing=Math.abs(sx)>Math.abs(sy)*1.3?(sx<0?'left':'right'):(sy<0?'back':'front');
     }
     const now=Date.now()+this.serverOffset,fence=!!this.game?.camp.fenceLevel;
-    const job=this.game?.jobs.find(j=>j.members.some(member=>member.id===s.id)&&j.endsAt>now);
+    const job=this.actorJob(s.id),startingArga=s.id==='arga'&&!!job&&m.lastJob!==job.id;
     const patient=!job?this.game?.jobs.find(j=>j.kind==='heal'&&j.targetId===s.id&&j.endsAt>now):undefined;
-    const spots:Record<string,[number,number]>={chop:[-6,.5],loot:[5,3.4],guard:[2,-5.7],attack:[2,-7.3],forage:[-4,5.5],craft:[-3.9,2.8],bandage:[-2.5,4.2],build:[-5.5,1.5],repair:[3,.2],heal:[-1,4.5],rest:[1,2.3],eat:[-1.6,3.6]};
+    const spots:Record<string,[number,number]>={chop:[-6,.5],loot:[5,3.4],guard:[2,-5.7],attack:[-5.2,-7.5],forage:[-4,5.5],craft:[-3.9,2.8],bandage:[-2.5,4.2],build:[-5.5,1.5],repair:[3,.2],heal:[-1,4.5],rest:[1,2.3],eat:[-1.6,3.6]};
     const idleSpots=[{x:-4.5,y:3.8},{x:-4.5,y:-4.4},{x:4.3,y:-4.4},{x:4.8,y:4.1},spawn];
     let goal:WorldPoint|undefined,key='';
-    if(job){const base=spots[job.kind],n=job.members.findIndex(member=>member.id===s.id);goal={x:base[0]+(n%2)*.65,y:base[1]+Math.floor(n/2)*.65};
+    if(job){const base=s.id==='arga'?[-3.5,-6.9]:spots[job.kind],n=job.members.findIndex(member=>member.id===s.id);goal={x:base[0]+(n%2)*.65,y:base[1]+Math.floor(n/2)*.65};
       if(job.kind==='heal'&&job.targetId&&job.targetId!==s.id){const target=this.motions.get(job.targetId);if(target){goal={x:target.x-.7,y:target.y+.5};}}
       key='job:'+job.id+':'+Math.round(goal.x*2)+':'+Math.round(goal.y*2)+':'+fence;m.lastJob=job.id;
     }else if(patient){goal={x:m.x,y:m.y};key='patient:'+patient.id;}
@@ -249,11 +255,11 @@ export class WorldEngine {
     else if(t>=m.pauseUntil){goal=s.activity==='istirahat'?{x:1.4,y:2.4}:idleSpots[m.idle%idleSpots.length];key='idle:'+m.idle+':'+fence;}
     if(goal&&key!==m.key){if(!walkable(goal,fence)){const nearby=[{x:goal.x+.5,y:goal.y},{x:goal.x-.5,y:goal.y},{x:goal.x,y:goal.y+.5}].find(p=>walkable(p,fence));goal=nearby;}
       m.route=goal?findRoute({x:m.x,y:m.y},goal,fence):[];m.distance=0;m.key=key;
-      if(fresh&&job&&m.route.length){m.distance=Math.min(routeDistance(m.route),Math.max(0,(now-job.startedAt)/1000)*1.75);const p=followRoute(m.route,m.distance);m.x=p.x;m.y=p.y;}
+      if((fresh||startingArga)&&job&&m.route.length){m.distance=Math.min(routeDistance(m.route),Math.max(0,(now-job.startedAt)/1000)*1.75);const p=followRoute(m.route,m.distance);m.x=p.x;m.y=p.y;}
     }
     const length=routeDistance(m.route);m.walking=m.distance<length-.01;m.working=false;
     if(m.walking){m.mode=!job&&m.lastJob?'return':'walk';
-    }else if(job){m.mode='work';m.working=true;const focus:Record<string,WorldPoint>={chop:{x:-6.7,y:.3},loot:{x:5.5,y:2.7},guard:{x:2,y:-7.4},attack:{x:2.5,y:-7.8},build:{x:-6.5,y:1.5},repair:{x:2,y:.2},craft:{x:-3,y:2.8}};const f=focus[job.kind];if(f){const dx=(f.x-m.x)-(f.y-m.y),dy=(f.x-m.x)+(f.y-m.y);m.facing=Math.abs(dx)>Math.abs(dy)*.7?(dx<0?'left':'right'):(dy<0?'back':'front');}else m.facing='front';
+    }else if(job){m.mode='work';m.working=true;const focus:Record<string,WorldPoint>={chop:{x:-6.7,y:.3},loot:{x:5.5,y:2.7},guard:{x:2,y:-7.4},attack:{x:2.5,y:-7.8},build:{x:-6.5,y:1.5},repair:{x:2,y:.2},craft:{x:-3,y:2.8}};const f=job.kind==='attack'?zombiePosition(0,!!this.game?.camp.raidDeadline):focus[job.kind];if(f){const dx=(f.x-m.x)-(f.y-m.y),dy=(f.x-m.x)+(f.y-m.y);m.facing=Math.abs(dx)>Math.abs(dy)*.7?(dx<0?'left':'right'):(dy<0?'back':'front');}else m.facing='front';
     }else{m.mode='idle';if(m.key.startsWith('return:')){m.lastJob='';m.pauseUntil=t+3;m.key='pause';}else if(m.key.startsWith('idle:')){m.idle++;m.pauseUntil=t+2+phase*4;m.key='pause';}}
     return{x:m.x,y:m.y,walking:m.walking,heading:m.heading,phase,facing:m.facing,working:m.working,mode:m.mode};
   }
@@ -261,7 +267,7 @@ export class WorldEngine {
     const ctx=this.ctx,m=this.motions.get(s.id),stride=walking?Math.sin(infected?time*3.8:(m?.walked||0)*9):0;
     shadow(ctx,1,0,walking?12:13,5,.18);
     if(own){ctx.strokeStyle='#f7ce7b';ctx.lineWidth=2.4;ctx.beginPath();ctx.ellipse(0,1,18,7,0,0,Math.PI*2);ctx.stroke();}
-    const job=this.game?.jobs.find(j=>j.members.some(member=>member.id===s.id)&&j.endsAt>Date.now()+this.serverOffset);
+    const job=this.actorJob(s.id);
     const kind=job?.kind,kneel=(working&&['forage','heal','loot','rest','eat'].includes(kind||''))?.7:0;
     drawCharacter(ctx,{look:s.appearance,style:s.customization,time,stride,facing,working,infected,kneel});
     if(walking&&!infected){ctx.fillStyle='#dccb9b55';const step=(m?.walked||0)*4%1;ctx.beginPath();ctx.ellipse(-stride*2,3+step*7,2+step*2,1,0,0,Math.PI*2);ctx.fill();}
@@ -306,11 +312,11 @@ export class WorldEngine {
     }
     const stationTree=iso(-6.7,.3);items.push({x:-6.7,y:.3,depth:-6.4,selection:{kind:'wood',name:'Area penebangan'},hit:{x:-60,y:-145,w:120,h:155},draw:()=>{ctx.save();ctx.translate(stationTree.x,stationTree.y);const chopping=working('chop');ctx.rotate(chopping?Math.sin(time*6)*.016:Math.sin(time*.7)*.003);ctx.drawImage(this.treeSprites[2],-78,-173,156,190);ctx.restore();if(chopping){for(let i=0;i<5;i++){const phase=(time*1.2+i*.2)%1;ctx.fillStyle='#d0b17b';ctx.fillRect(stationTree.x+phase*28-10,stationTree.y-20+phase*phase*24-i*2,3,2);}}}});
     items.push({x:5.5,y:2.7,depth:8.2,selection:{kind:'loot',name:'Rute looting'},hit:{x:-30,y:-60,w:60,h:72},draw:()=>{const p=iso(5.5,2.7);ctx.save();ctx.translate(p.x,p.y);box(ctx,-.4,-.3,0,.8,.6,.6,'#b7a372','#8d794b','#78653e');for(const x of [-.25,.25])box(ctx,x,-.31,0,.08,.64,.62,'#6c8475','#597064','#476156');if(working('loot')){polygon(ctx,[iso(-.35,-.25,.61),iso(.35,-.25,.61),iso(.35,.25,.61),iso(-.35,.25,.61)],'#354c39');polygon(ctx,[iso(-.4,-.3,.6),iso(.4,-.3,.6),iso(.4,-.65,1.1),iso(-.4,-.65,1.1)],'#baab7b','#7b6d49',2);ctx.fillStyle='#e3ca76';ctx.fillRect(-9,-15+Math.sin(time*3)*2,6,4);}else roundRect(ctx,-4,-23,8,10,2,'#d9c780');ctx.restore();}});
-    for (let i = 0; i < (this.game ? Math.min(6,Math.ceil(this.game.camp.enemyHp/16)) : 2); i++) { const x = -1 + i * 1.8 + Math.sin(time * .2 + i) * .13, y = (this.game?.camp.raidDeadline?-7.1:-8.15) - i * .2, p = iso(x, y); items.push({ x, y, depth: x + y, selection: { kind: 'zombie', id: `zombie-${i}`, name: 'Zombie di luar lahan' }, hit: { x: -16, y: -56, w: 32, h: 59 }, draw: () => { ctx.save(); ctx.translate(p.x, p.y); this.drawActor({ id: `zombie-${i}`, name: '', role: '', activity: '', appearance: 'clay', joinedDay: 1 }, time + i, true, 1, false, true); ctx.restore(); } }); }
+    for (let i = 0; i < (this.game ? visibleZombieCount(this.game.camp.enemyHp) : 0); i++) { const target=zombiePosition(i,!!this.game?.camp.raidDeadline),x=target.x+Math.sin(time*.2+i)*.13,y=target.y,p=iso(x,y); items.push({ x, y, depth: x + y, selection: { kind: 'zombie', id: `zombie-${i}`, name: 'Zombie di luar lahan' }, hit: { x: -16, y: -56, w: 32, h: 59 }, draw: () => { ctx.save(); ctx.translate(p.x, p.y); this.drawActor({ id: `zombie-${i}`, name: '', role: '', activity: '', appearance: 'clay', joinedDay: 1 }, time + i, true, 1, false, true); ctx.restore(); } }); }
     this.fallen=this.fallen.filter(f=>performance.now()-f.at<1200);
-    for(const f of this.fallen){const age=(performance.now()-f.at)/1200,x=-1+f.index*1.8,y=-7.8-f.index*.2,p=iso(x,y);items.push({x,y,depth:x+y,draw:()=>{ctx.save();ctx.translate(p.x,p.y);ctx.globalAlpha=1-age;ctx.rotate(-Math.min(1,age*2)*1.4);drawCharacter(ctx,{infected:true,facing:'front',look:'clay'});ctx.restore();}});}
+    for(const f of this.fallen){const age=(performance.now()-f.at)/1200,target=zombiePosition(f.index,!!this.game?.camp.raidDeadline),x=target.x,y=target.y,p=iso(x,y);items.push({x,y,depth:x+y,draw:()=>{ctx.save();ctx.translate(p.x,p.y);ctx.globalAlpha=1-age;ctx.rotate(-Math.min(1,age*2)*1.4);drawCharacter(ctx,{infected:true,facing:'front',look:'clay'});ctx.restore();}});}
     const damageAge=(performance.now()-this.damageAt)/1400;
-    if(this.damageAt&&damageAge<1){const p=iso(1,-7.5);ctx.save();ctx.globalAlpha=1-damageAge;ctx.fillStyle='#ae5c43';ctx.font='bold 14px system-ui';ctx.textAlign='center';ctx.fillText('-'+this.damageAmount+' HP',p.x,p.y-75-damageAge*25);ctx.restore();}
+    if(this.damageAt&&damageAge<1){const target=zombiePosition(0,!!this.game?.camp.raidDeadline),p=iso(target.x,target.y);ctx.save();ctx.globalAlpha=1-damageAge;ctx.fillStyle='#ae5c43';ctx.font='bold 14px system-ui';ctx.textAlign='center';ctx.fillText('-'+this.damageAmount+' HP',p.x,p.y-75-damageAge*25);ctx.restore();}
     let active = this.game ? this.survivors : [];
     if (active.length > 29) { const start = Math.floor(time / 28) * 28 % active.length; active = [...active.slice(start), ...active.slice(0, start)].slice(0, 29); let reserved = 0; for (const id of [this.ownId, this.focusedId]) { const required = this.survivors.find(s => s.id === id); if (required && !active.some(s => s.id === required.id)) { active[active.length - 1 - reserved] = required; reserved++; } } }
     for (const s of [this.arga(), ...active]) { const p = this.actorPosition(s, time), v = iso(p.x, p.y); const own = s.id === this.ownId; items.push({ x: p.x, y: p.y, depth: p.x + p.y + .15, selection: { kind: 'survivor', id: s.id, name: s.name }, hit: { x: -18, y: -61, w: 36, h: 65 }, draw: () => { ctx.save(); ctx.translate(v.x, v.y); this.drawActor(s, time, p.walking, p.heading, own, false, p.facing, p.working); ctx.restore(); } }); }
