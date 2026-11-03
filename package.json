@@ -1,0 +1,31 @@
+{
+  "name": "pos-terakhir",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "wrangler dev",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:api": "node scripts/verify-api.mjs",
+    "db:local": "wrangler d1 migrations apply DB --local",
+    "db:remote": "wrangler d1 migrations apply DB --remote",
+    "db:setup": "node scripts/setup-database.mjs",
+    "deploy": "npm run build && npm run deploy:built",
+    "deploy:built": "npm run db:remote && wrangler deploy"
+  },
+  "dependencies": { "lucide-react": "1.31.0", "react": "19.2.6", "react-dom": "19.2.6" },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.67.0",
+    "@cloudflare/workers-types": "5.20261103.1",
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "typescript": "5.9.3",
+    "vite": "8.3.5",
+    "wrangler": "4.156.2"
+  }
+}
