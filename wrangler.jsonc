@@ -12,8 +12,8 @@
   "d1_databases": [{
     "binding": "DB",
     "database_name": "pos-terakhir-db",
-    // Replace with your own ID using npm run db:setup before the first deployment.
-    "database_id": "00000000-0000-4000-8000-000000000000",
+    // Production database. Keep this ID to preserve existing survivor data.
+    "database_id": "e10e2fc6-264b-4bf0-bfa3-decbe6c0b8c6",
     "migrations_dir": "migrations"
   }]
 }

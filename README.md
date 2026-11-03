@@ -1,5 +1,9 @@
 # Pos Terakhir
 
+**Web publik: https://pos-terakhir.alah6075.workers.dev**
+
+Sudah diterbitkan ke Cloudflare Workers dengan database D1 produksi terpisah dari data lokal. Deploy berikutnya dari komputer yang sudah login: `npm run deploy`. Koneksi deploy otomatis Workers Builds ke GitHub masih perlu diaktifkan bila ingin setiap push langsung terbit.
+
 Dunia penyintas zombie 2D isometrik untuk serial **Pos Terakhir**. Day 1 dimulai dari satu rumah, dua kaleng makanan, satu botol air, dan dua zombie di luar batas lahan.
 
 Frontend React + Vite, backend Cloudflare Worker, penyimpanan Cloudflare D1. Tidak memerlukan Sites, akun ChatGPT, server berbayar, atau aset eksternal. Tampilan menyesuaikan HP dan desktop.
