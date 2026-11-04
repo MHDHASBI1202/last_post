@@ -66,3 +66,16 @@ const catchup=await Promise.all([read(first),read(second)]);for(const r of catch
 sql("UPDATE camp SET enemy_hp=40,integrity=100,defense=0,fence_level=0,raid_deadline="+(Date.now()-1000)+",arga_next_attack="+(Date.now()+60000));
 const expired=(await read(first)).data;assert.equal(expired.camp.integrity,90);assert.equal(expired.camp.enemyHp,0);
 console.log("PASS: delayed Arga intervals settle once; no attack occurs after the raid deadline.");
+
+const resting = await act(second, { action: "start", kind: "rest" });
+assert.equal(resting.status, 200);
+sql("UPDATE camp SET enemy_hp=48,raid_deadline="+(Date.now()+60000)+",arga_next_attack="+(Date.now()-1000));
+const patrolChecks = await Promise.all([read(first), read(second)]);
+for (const result of patrolChecks) {
+  assert.equal(result.status, 200);
+  assert.equal(result.data.patrol.length, 2);
+  assert.ok(!result.data.patrol.some(member => member.id === second.id));
+  assert.equal(result.data.camp.enemyHp, 44);
+}
+finish(resting.data.game.activeJob);
+console.log("PASS: idle defenders damage the shared wave once and yield to manual jobs.");

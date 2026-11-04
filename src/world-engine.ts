@@ -227,7 +227,21 @@ export class WorldEngine {
   private actorJob(id:string):Job|undefined {
     const now=Date.now()+this.serverOffset;
     if(id==='arga'&&this.game?.arga?.active&&this.game.camp.enemyHp>0)return{id:'arga-defense:'+this.game.camp.wave,kind:'attack',ownerId:'arga',ownerName:'Arga',targetName:null,startedAt:this.game.arga.startedAt,endsAt:this.game.camp.raidDeadline||now+60000,members:[{id:'arga',name:'Arga',role:'penjaga'}]};
-    return this.game?.jobs.find(j=>j.members.some(member=>member.id===id)&&j.endsAt>now);
+    const manual = this.game?.jobs.find(j => j.members.some(member => member.id === id) && j.endsAt > now);
+    if (manual) return manual;
+    const game = this.game;
+    const patrol = game?.patrol;
+    if (!game || !patrol?.some(member => member.id === id) || game.camp.raidDeadline <= now) return;
+    return {
+      id: 'idle-defense:' + game.camp.wave,
+      kind: 'attack',
+      ownerId: patrol[0].id,
+      ownerName: patrol[0].name,
+      targetName: null,
+      startedAt: game.arga?.startedAt ?? now,
+      endsAt: game.camp.raidDeadline,
+      members: patrol,
+    };
   }
   private actorPosition(s: Survivor, t: number) {
     const seed=hash(s.id),phase=(seed%1000)/1000,spawn={x:((seed%9)-4)*.72,y:4+(seed%3)*.48};
@@ -318,7 +332,13 @@ export class WorldEngine {
     const damageAge=(performance.now()-this.damageAt)/1400;
     if(this.damageAt&&damageAge<1){const target=zombiePosition(0,!!this.game?.camp.raidDeadline),p=iso(target.x,target.y);ctx.save();ctx.globalAlpha=1-damageAge;ctx.fillStyle='#ae5c43';ctx.font='bold 14px system-ui';ctx.textAlign='center';ctx.fillText('-'+this.damageAmount+' HP',p.x,p.y-75-damageAge*25);ctx.restore();}
     let active = this.game ? this.survivors : [];
-    if (active.length > 29) { const start = Math.floor(time / 28) * 28 % active.length; active = [...active.slice(start), ...active.slice(0, start)].slice(0, 29); let reserved = 0; for (const id of [this.ownId, this.focusedId]) { const required = this.survivors.find(s => s.id === id); if (required && !active.some(s => s.id === required.id)) { active[active.length - 1 - reserved] = required; reserved++; } } }
+    if (active.length > 29) {
+      const start = Math.floor(time / 28) * 28 % active.length;
+      const priorityIds = new Set([this.ownId, this.focusedId, ...this.game?.patrol?.map(member => member.id) ?? []]);
+      const priority = active.filter(survivor => priorityIds.has(survivor.id));
+      const rotating = [...active.slice(start), ...active.slice(0, start)];
+      active = [...priority, ...rotating.filter(survivor => !priorityIds.has(survivor.id))].slice(0, 29);
+    }
     for (const s of [this.arga(), ...active]) { const p = this.actorPosition(s, time), v = iso(p.x, p.y); const own = s.id === this.ownId; items.push({ x: p.x, y: p.y, depth: p.x + p.y + .15, selection: { kind: 'survivor', id: s.id, name: s.name }, hit: { x: -18, y: -61, w: 36, h: 65 }, draw: () => { ctx.save(); ctx.translate(v.x, v.y); this.drawActor(s, time, p.walking, p.heading, own, false, p.facing, p.working); ctx.restore(); } }); }
     items.sort((a, b) => a.depth - b.depth);
     for (const item of items) {
