@@ -15,7 +15,7 @@ Frontend React + Vite, backend Cloudflare Worker, penyimpanan Cloudflare D1. Tid
 - Aktivitas karakter dan voting prioritas pembangunan. Mengganti pilihan memperbarui suara lama.
 - Identitas per browser dengan cookie HttpOnly; kunci pemulihan pribadi untuk pindah perangkat.
 - Data disimpan di database bersama, bukan sekadar localStorage. Profil uji dan database lokal tidak masuk repo.
-- **Bertahan bersama:** menebang, looting/peti suplai, mencari air/herba, merakit, meramu obat, membangun pagar, memperbaiki markas, menjaga, melawan zombie, merawat teman, istirahat, dan ransum.
+- **Bertahan bersama:** menebang, looting/peti suplai, mencari air/herba, merakit, meramu obat, memperkuat pagar, memperbaiki markas, menjaga, melawan zombie, merawat teman, istirahat, dan ransum.
 - Tim hingga 4 pemain, bahan/gudang bersama, bonus keahlian peran, kesehatan/energi, sapaan, jurnal kegiatan, dan gelombang zombie.
 - Gerakan dengan rute yang menghindari rumah dan memakai gerbang saat pagar sudah berdiri. Karakter berjalan ke lokasi, mengerjakan kegiatan, lalu kembali; animasi alat aktif setelah tiba.
 - Kustomisasi kulit, rambut, topi, aksesori, tas, celana, dan jaket. Tampilan tersimpan di D1 dan konsisten di peta, kartu, link berbagi, serta PNG unduhan.
@@ -45,7 +45,7 @@ Animasi peta memakai Canvas 2D: arah badan, langkah, alat, tas, gerak istirahat/
 | Peramu | Hasil air, herba, dan kotak medis lebih banyak |
 | Medis | Perawatan memulihkan 45 HP (umum 25), hasil kotak medis lebih banyak |
 
-Semua peran masih dapat melakukan kegiatan dasar; keahlian memberi hasil lebih baik. Perkakas gudang menambah kayu/scrap maksimal +3. Pagar naik satu level tiap 60 progres dan tampil di peta; tiap level menahan 4 kerusakan tambahan.
+Semua peran masih dapat melakukan kegiatan dasar; keahlian memberi hasil lebih baik. Perkakas gudang menambah kayu/scrap maksimal +3. Pagar perimeter berdiri mengelilingi markas dengan gerbang utama dan naik satu level tiap 60 progres; tampilan visual meningkat (palisade, palang penguat, kawat berduri) dan tiap level menahan 4 kerusakan tambahan.
 
 Gelombang zombie dijadwalkan tiap 15 menit, dengan 2 menit untuk merespons. Serang untuk menghabiskan HP ancaman, atau jaga untuk mengurangi kerusakan rumah. Pertahanan penjagaan habis setelah serangan. Markas yang rusak dapat diperbaiki; karakter tidak hilang permanen.
 

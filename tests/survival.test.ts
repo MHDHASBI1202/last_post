@@ -14,4 +14,12 @@ test("role bonuses affect real outputs and looting outcomes", () => {
   assert.ok(actionRewards("attack","penjaga",0,.9).damage > actionRewards("attack","peramu",0,.9).damage);
   assert.ok(actionRewards("heal","medis",0,.9).heal > actionRewards("heal","perintis",0,.9).heal);
   assert.equal(actionRewards("chop","perintis",100,.9).wood,11);
+  const buildPerintis = actionRewards("build","perintis",0,.5);
+  const buildPerakit = actionRewards("build","perakit",0,.5);
+  const buildMedis = actionRewards("build","medis",0,.5);
+  assert.equal(buildPerintis.costWood, 4);
+  assert.equal(buildPerintis.costScrap, 1);
+  assert.equal(buildPerintis.progress, 18);
+  assert.equal(buildPerakit.progress, 18);
+  assert.equal(buildMedis.progress, 10);
 });

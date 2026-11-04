@@ -4,7 +4,7 @@ import type { GameState,Job } from "./survival-rules";
 import { drawCharacter,type CharacterStyle,type Facing } from "./character-style";
 import { findRoute,followRoute,routeDistance,walkable,type WorldPoint } from "./world-navigation";
 export type Survivor = { id: string; name: string; role: string; activity: string; appearance: string; joinedDay: number; customization?: CharacterStyle };
-type Selection = { kind: 'house' | 'crate' | 'radio' | 'water' | 'plot' | 'survivor' | 'zombie' | 'wood' | 'loot'; id?: string; name: string };
+type Selection = { kind: 'house' | 'crate' | 'radio' | 'water' | 'plot' | 'survivor' | 'zombie' | 'wood' | 'loot' | 'fence'; id?: string; name: string };
 type Point = { x: number; y: number };
 type SceneItem = { x: number; y: number; depth: number; draw: () => void; selection?: Selection; hit?: { x: number; y: number; w: number; h: number } };
 type Tree = { x: number; y: number; size: number; variant: number };
@@ -294,7 +294,7 @@ export class WorldEngine {
       else if(job.kind==='eat'){roundRect(ctx,11,-30,7,10,2,'#a67a55');}
       ctx.restore();
     }
-    if(!infected&&job){const names:Record<string,string>={chop:'NEBANG',loot:'LOOTING',guard:'JAGA',attack:'LAWAN',forage:'MERAMU',craft:'MERAKIT',bandage:'MERAMU',build:'MEMBANGUN',repair:'PERBAIKI',heal:'MERAWAT',rest:'ISTIRAHAT',eat:'RANSUM'};roundRect(ctx,-28,6,56,13,4,'#183e34dc');ctx.fillStyle='#f6e6bc';ctx.font='bold 7px system-ui';ctx.textAlign='center';ctx.fillText(walking?'MENUJU LOKASI':names[job.kind],0,15);}
+    if(!infected&&job){const names:Record<string,string>={chop:'NEBANG',loot:'LOOTING',guard:'JAGA',attack:'LAWAN',forage:'MERAMU',craft:'MERAKIT',bandage:'MERAMU',build:'PERKUAT',repair:'PERBAIKI',heal:'MERAWAT',rest:'ISTIRAHAT',eat:'RANSUM'};roundRect(ctx,-28,6,56,13,4,'#183e34dc');ctx.fillStyle='#f6e6bc';ctx.font='bold 7px system-ui';ctx.textAlign='center';ctx.fillText(walking?'MENUJU LOKASI':names[job.kind],0,15);}
     const hp=this.game?.crew.find(p=>p.id===s.id)?.health;if(!infected&&hp!==undefined&&hp<100){roundRect(ctx,-13,-61,26,3,1,'#9d8d70');roundRect(ctx,-13,-61,26*hp/100,3,1,'#ba765d');}
     if(own)polygon(ctx,[{x:-5,y:-65},{x:5,y:-65},{x:0,y:-59}],'#f2c36f');
     if(this.labels&&!infected&&!own)this.drawName(s.name,0,-78,false);
@@ -317,12 +317,156 @@ export class WorldEngine {
     items.push({ x: -1.4, y: 3.1, depth: 1.7, selection: { kind: 'water', name: 'Persediaan awal' }, hit: { x: -51, y: -68, w: 102, h: 80 }, draw: () => { const p = iso(-1.4, 3.1); ctx.save(); ctx.translate(p.x, p.y); this.drawSupplies(); ctx.restore(); } });
     items.push({ x: .55, y: 2.2, depth: 2.75, selection: { kind: 'radio', name: 'Radio darurat' }, hit: { x: -20, y: -50, w: 40, h: 54 }, draw: () => { const p = iso(.55, 2.2); ctx.save(); ctx.translate(p.x, p.y); this.drawRadio(); ctx.restore(); } });
     items.push({ x: -5.5, y: 1.5, depth: -4, selection: { kind: 'plot', name: 'Lahan pembangunan' }, hit: { x: -70, y: -25, w: 140, h: 75 }, draw: () => { const p = iso(-5.5, 1.5); if (this.labels) { ctx.save(); ctx.globalAlpha = .7; this.drawName('Lahan kosong', p.x, p.y - 2); ctx.restore(); } } });
-    // A sparse old agricultural fence. It does not enclose the settlement.
+    // A sparse old agricultural fence in the background. It does not enclose the settlement.
     for (let x = -6; x <= 6; x += 2) { const p = iso(x, -6.7); items.push({ x, y: -6.7, depth: x - 6.7, draw: () => { ctx.save(); ctx.translate(p.x, p.y); box(ctx, -.05, -.05, 0, .1, .1, 1.05, '#a28b60', '#8e7750', '#776446'); for (const z of [.35, .72]) path(ctx, [iso(0, 0, z), iso(1.8, 0, z - .12)], '#a0a68c', 1); ctx.restore(); } }); }
-    if (this.game?.camp.fenceLevel) for(let i=-6;i<=6;i++) for(const edge of [0,1,2,3]) {
-      if(edge===2 && Math.abs(i)<2)continue;
-      const x=edge===0?-6.5:edge===3?6.5:i,y=edge===1?-6.5:edge===2?6.5:i,p=iso(x,y);
-      items.push({x,y,depth:x+y,draw:()=>{ctx.save();ctx.translate(p.x,p.y);box(ctx,0,0,0,.11,.11,1.12,C.timber,C.wood,'#786141');for(const z of [.35,.78])path(ctx,[iso(0,0,z),iso(edge===0||edge===3?0:1,edge===0||edge===3?1:0,z)],'#b99a67',5);ctx.restore();}});
+    const fenceLevel = this.game?.camp.fenceLevel || 0;
+    if (fenceLevel > 0) {
+      for (let i = -6; i <= 6; i++) {
+        for (const edge of [0, 1, 2, 3]) {
+          if (edge === 2 && Math.abs(i) < 2) continue;
+          const x = edge === 0 ? -6.5 : edge === 3 ? 6.5 : i;
+          const y = edge === 1 ? -6.5 : edge === 2 ? 6.5 : i;
+          const p = iso(x, y);
+          const isCorner = (edge === 0 || edge === 3) && (i === -6 || i === 6);
+          const postH = 1.25 + Math.min(0.35, fenceLevel * 0.12);
+
+          items.push({
+            x, y, depth: x + y,
+            draw: () => {
+              ctx.save();
+              ctx.translate(p.x, p.y);
+              const pw = isCorner ? 0.18 : 0.14;
+              box(ctx, -pw / 2, -pw / 2, 0, pw, pw, postH, '#b99563', '#8f6e3e', '#73552d');
+              polygon(ctx, [iso(0, -pw / 2, postH), iso(pw / 2, 0, postH), iso(0, 0, postH + 0.18), iso(-pw / 2, 0, postH)], '#cca874');
+              polygon(ctx, [iso(0, pw / 2, postH), iso(pw / 2, 0, postH), iso(0, 0, postH + 0.18), iso(-pw / 2, 0, postH)], '#9e7c49');
+              if (fenceLevel >= 2) {
+                for (const bz of [0.38, 0.88]) box(ctx, -pw / 2 - 0.015, -pw / 2 - 0.015, bz, pw + 0.03, pw + 0.03, 0.065, '#566472', '#3e4a57', '#2a3440');
+              }
+              const isAlongY = edge === 0 || edge === 3;
+              const nextValid = isAlongY ? i < 6 : (edge === 2 ? (i < -2 || (i >= 2 && i < 6)) : i < 6);
+              if (nextValid) {
+                const stepX = isAlongY ? 0 : 1;
+                const stepY = isAlongY ? 1 : 0;
+                path(ctx, [iso(0, 0, 0.35), iso(stepX, stepY, 0.35)], '#84663c', 5);
+                path(ctx, [iso(0, 0, 0.38), iso(stepX, stepY, 0.38)], '#b99a67', 3);
+                path(ctx, [iso(0, 0, 0.82), iso(stepX, stepY, 0.82)], '#84663c', 5);
+                path(ctx, [iso(0, 0, 0.85), iso(stepX, stepY, 0.85)], '#b99a67', 3);
+                if (fenceLevel >= 2) {
+                  path(ctx, [iso(0, 0, 0.58), iso(stepX, stepY, 0.58)], '#a88552', 4);
+                  path(ctx, [iso(0.08 * stepX, 0.08 * stepY, 0.3), iso(0.92 * stepX, 0.92 * stepY, 0.88)], '#785b34', 3.5);
+                }
+                for (const frac of [0.33, 0.67]) {
+                  const px = stepX * frac, py = stepY * frac, picketH = postH - 0.12;
+                  box(ctx, px - 0.04, py - 0.04, 0.1, 0.08, 0.08, picketH, '#b28e5c', '#89693a', '#6d512a');
+                  polygon(ctx, [iso(px, py - 0.04, 0.1 + picketH), iso(px + 0.04, py, 0.1 + picketH), iso(px, py, 0.1 + picketH + 0.12), iso(px - 0.04, py, 0.1 + picketH)], '#cba570');
+                }
+                if (fenceLevel >= 3) {
+                  const wireZ = postH + 0.07;
+                  path(ctx, [iso(0, 0, wireZ), iso(stepX * 0.5, stepY * 0.5, wireZ + 0.06), iso(stepX, stepY, wireZ)], '#9ba3af', 2);
+                  for (const wf of [0.25, 0.5, 0.75]) {
+                    path(ctx, [iso(stepX * wf - 0.03, stepY * wf - 0.03, wireZ - 0.04), iso(stepX * wf + 0.03, stepY * wf + 0.03, wireZ + 0.04)], '#cbd5e1', 2);
+                  }
+                }
+              }
+              if (fenceLevel >= 2 && (isCorner || (i % 3 === 0))) {
+                const outDx = edge === 0 ? -0.45 : edge === 3 ? 0.45 : 0;
+                const outDy = edge === 1 ? -0.45 : edge === 2 ? 0.45 : 0;
+                path(ctx, [iso(0, 0, 0.1), iso(outDx, outDy, 0.45)], '#604726', 4);
+                path(ctx, [iso(outDx * 0.7, outDy * 0.7, 0.35), iso(outDx, outDy, 0.45)], '#bca279', 2);
+              }
+              ctx.restore();
+            }
+          });
+        }
+      }
+
+      items.push({
+        x: -1.5, y: 6.5, depth: 5.0,
+        draw: () => {
+          ctx.save();
+          const p = iso(-1.5, 6.5);
+          ctx.translate(p.x, p.y);
+          box(ctx, -0.16, -0.16, 0, 0.32, 0.32, 2.5, '#ad8753', '#8b693b', '#6d4f29');
+          for (const bz of [0.4, 1.1, 1.8]) box(ctx, -0.18, -0.18, bz, 0.36, 0.36, 0.09, '#4c5765', '#384350', '#252f3a');
+          path(ctx, [iso(0, -0.7, 0), iso(0, 0, 1.6)], '#7e5f35', 6);
+          box(ctx, -0.55, 0.1, 0, 0.35, 0.28, 0.18, '#d4c5a0', '#b8a57e', '#9c8b65');
+          box(ctx, -0.5, 0.12, 0.18, 0.3, 0.24, 0.16, '#cbb993', '#ad9a73', '#93825d');
+          path(ctx, [iso(0, 0, 0.4), iso(0.2, -0.65, 0.4)], '#755831', 5);
+          path(ctx, [iso(0, 0, 1.2), iso(0.2, -0.65, 1.2)], '#755831', 5);
+          for (const df of [0.25, 0.55, 0.85]) box(ctx, df * 0.2 - 0.04, -df * 0.65 - 0.04, 0.1, 0.08, 0.08, 1.4, '#a27f4d', '#7d5d33', '#604523');
+          ctx.restore();
+        }
+      });
+
+      items.push({
+        x: 1.5, y: 6.5, depth: 8.0,
+        draw: () => {
+          ctx.save();
+          const p = iso(1.5, 6.5);
+          ctx.translate(p.x, p.y);
+          box(ctx, -0.16, -0.16, 0, 0.32, 0.32, 2.5, '#ad8753', '#8b693b', '#6d4f29');
+          for (const bz of [0.4, 1.1, 1.8]) box(ctx, -0.18, -0.18, bz, 0.36, 0.36, 0.09, '#4c5765', '#384350', '#252f3a');
+          path(ctx, [iso(0, -0.7, 0), iso(0, 0, 1.6)], '#7e5f35', 6);
+          box(ctx, 0.2, 0.1, 0, 0.35, 0.28, 0.18, '#d4c5a0', '#b8a57e', '#9c8b65');
+          box(ctx, 0.2, 0.12, 0.18, 0.3, 0.24, 0.16, '#cbb993', '#ad9a73', '#93825d');
+          path(ctx, [iso(0, 0, 0.4), iso(-0.2, -0.65, 0.4)], '#755831', 5);
+          path(ctx, [iso(0, 0, 1.2), iso(-0.2, -0.65, 1.2)], '#755831', 5);
+          for (const df of [0.25, 0.55, 0.85]) box(ctx, -df * 0.2 - 0.04, -df * 0.65 - 0.04, 0.1, 0.08, 0.08, 1.4, '#a27f4d', '#7d5d33', '#604523');
+          path(ctx, [iso(0, 0, 2.15), iso(0.25, 0.2, 2.2), iso(0.25, 0.2, 1.95)], '#2e3842', 3);
+          const lp = iso(0.25, 0.2, 1.95);
+          box(ctx, 0.2, 0.15, 1.75, 0.12, 0.12, 0.18, '#202830', '#151c22', '#0f1418');
+          ctx.fillStyle = '#ffbe55';
+          ctx.beginPath();
+          ctx.arc(lp.x, lp.y + 7, 4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      });
+
+      items.push({
+        x: 0, y: 6.5, depth: 6.55,
+        selection: { kind: 'fence', name: `Pagar & Gerbang Perimeter (Lv.${fenceLevel})` },
+        hit: { x: -65, y: -115, w: 130, h: 125 },
+        draw: () => {
+          ctx.save();
+          path(ctx, [iso(-1.5, 6.5, 2.3), iso(1.5, 6.5, 2.3)], '#6d512a', 8);
+          path(ctx, [iso(-1.5, 6.5, 2.35), iso(1.5, 6.5, 2.35)], '#b48e58', 5);
+          const p = iso(0, 6.5, 2.05);
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          path(ctx, [{ x: -28, y: -16 }, { x: -28, y: 0 }], '#3d4855', 2);
+          path(ctx, [{ x: 28, y: -16 }, { x: 28, y: 0 }], '#3d4855', 2);
+          roundRect(ctx, -38, 0, 76, 20, 3, '#2a3d34', '#dfba6f');
+          ctx.fillStyle = '#fff4db';
+          ctx.font = '800 8.5px Segoe UI, system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('POS TERAKHIR', 0, 13);
+          ctx.restore();
+          if (this.labels) {
+            ctx.save();
+            ctx.globalAlpha = 0.88;
+            this.drawName(`Pagar Lv.${fenceLevel}${fenceLevel >= 2 ? ' · Diperkuat' : ''}`, p.x, p.y - 32);
+            ctx.restore();
+          }
+          if (working('build')) {
+            const bp = iso(-4.8, 2.2);
+            ctx.save();
+            ctx.translate(bp.x, bp.y);
+            box(ctx, -0.3, -0.15, 0, 0.6, 0.3, 0.45, '#aa8855', '#886638', '#664a25');
+            box(ctx, -0.25, -0.2, 0.45, 0.5, 0.4, 0.08, '#c29d66', '#9c7b49', '#785b30');
+            for (let pi = 0; pi < 3; pi++) box(ctx, 0.2 + pi * 0.05, -0.3, pi * 0.07, 0.45, 0.14, 0.06, '#d4ad72', '#b38c53', '#8a6839');
+            const chipTime = (time * 8) % 1;
+            ctx.fillStyle = '#f0d292';
+            for (let c = 0; c < 4; c++) {
+              const cx = Math.sin(time * 12 + c) * 14;
+              const cy = -20 - (chipTime * 22) + c * 3;
+              ctx.fillRect(cx, cy, 2.5, 2);
+            }
+            ctx.restore();
+          }
+          ctx.restore();
+        }
+      });
     }
     const stationTree=iso(-6.7,.3);items.push({x:-6.7,y:.3,depth:-6.4,selection:{kind:'wood',name:'Area penebangan'},hit:{x:-60,y:-145,w:120,h:155},draw:()=>{ctx.save();ctx.translate(stationTree.x,stationTree.y);const chopping=working('chop');ctx.rotate(chopping?Math.sin(time*6)*.016:Math.sin(time*.7)*.003);ctx.drawImage(this.treeSprites[2],-78,-173,156,190);ctx.restore();if(chopping){for(let i=0;i<5;i++){const phase=(time*1.2+i*.2)%1;ctx.fillStyle='#d0b17b';ctx.fillRect(stationTree.x+phase*28-10,stationTree.y-20+phase*phase*24-i*2,3,2);}}}});
     items.push({x:5.5,y:2.7,depth:8.2,selection:{kind:'loot',name:'Rute looting'},hit:{x:-30,y:-60,w:60,h:72},draw:()=>{const p=iso(5.5,2.7);ctx.save();ctx.translate(p.x,p.y);box(ctx,-.4,-.3,0,.8,.6,.6,'#b7a372','#8d794b','#78653e');for(const x of [-.25,.25])box(ctx,x,-.31,0,.08,.64,.62,'#6c8475','#597064','#476156');if(working('loot')){polygon(ctx,[iso(-.35,-.25,.61),iso(.35,-.25,.61),iso(.35,.25,.61),iso(-.35,.25,.61)],'#354c39');polygon(ctx,[iso(-.4,-.3,.6),iso(.4,-.3,.6),iso(.4,-.65,1.1),iso(-.4,-.65,1.1)],'#baab7b','#7b6d49',2);ctx.fillStyle='#e3ca76';ctx.fillRect(-9,-15+Math.sin(time*3)*2,6,4);}else roundRect(ctx,-4,-23,8,10,2,'#d9c780');ctx.restore();}});
@@ -344,7 +488,7 @@ export class WorldEngine {
     for (const item of items) {
       const p = iso(item.x, item.y); const sx = ox + p.x * this.zoom, sy = oy + p.y * this.zoom;
       if (sx < -420 * this.zoom || sx > this.width + 420 * this.zoom || sy < -360 * this.zoom || sy > this.height + 360 * this.zoom) continue;
-      if(item.selection&&this.hovered===`${item.selection.kind}:${item.selection.id||item.selection.name}`){ctx.strokeStyle='#ebcc7eaa';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(p.x,p.y+4,item.selection.kind==='house'?105:28,item.selection.kind==='house'?37:11,0,0,Math.PI*2);ctx.stroke();}
+      if(item.selection&&this.hovered===`${item.selection.kind}:${item.selection.id||item.selection.name}`){ctx.strokeStyle='#ebcc7eaa';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(p.x,p.y+4,item.selection.kind==='house'?105:item.selection.kind==='fence'?55:28,item.selection.kind==='house'?37:item.selection.kind==='fence'?20:11,0,0,Math.PI*2);ctx.stroke();}
       item.draw(); if (item.selection && item.hit) { const h = item.hit; this.hits.push({ selection: item.selection, x: sx + h.x * this.zoom - 6, y: sy + h.y * this.zoom - 6, w: h.w * this.zoom + 12, h: h.h * this.zoom + 12 }); }
     }
     const light=worldLight(this.worldEpoch+performance.now()-this.worldMono);
