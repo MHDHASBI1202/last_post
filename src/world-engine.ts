@@ -4,7 +4,7 @@ import type { GameState,Job } from "./survival-rules";
 import { drawCharacter,type CharacterStyle,type Facing } from "./character-style";
 import { findRoute,followRoute,routeDistance,walkable,type WorldPoint } from "./world-navigation";
 export type Survivor = { id: string; name: string; role: string; activity: string; appearance: string; joinedDay: number; customization?: CharacterStyle };
-type Selection = { kind: 'house' | 'crate' | 'radio' | 'water' | 'plot' | 'survivor' | 'zombie' | 'wood' | 'loot' | 'fence'; id?: string; name: string };
+type Selection = { kind: 'house' | 'crate' | 'radio' | 'water' | 'plot' | 'survivor' | 'zombie' | 'wood' | 'loot' | 'fence' | 'campfire' | 'garden' | 'clothesline'; id?: string; name: string };
 type Point = { x: number; y: number };
 type SceneItem = { x: number; y: number; depth: number; draw: () => void; selection?: Selection; hit?: { x: number; y: number; w: number; h: number } };
 type Tree = { x: number; y: number; size: number; variant: number };
@@ -193,6 +193,10 @@ export class WorldEngine {
     for (let y = -2.1; y < 2.04; y += .21) { path(ctx, [iso(-2.38, y, 3.14), iso(0, y, 4.32)], '#94aaa0', 1.4); path(ctx, [iso(0, y, 4.32), iso(2.38, y, 3.14)], '#8da49a', 1.4); }
     path(ctx, [iso(0, -2.24, 4.31), iso(0, 2.1, 4.31)], '#a3b1a0', 4);
     path(ctx, [iso(-2.42, 2.08, 3.1), iso(0, 2.08, 4.31), iso(2.42, 2.08, 3.1)], '#947b53', 4);
+    // Stone chimney on roof slope
+    box(ctx, -1.4, -0.6, 3.5, 0.42, 0.42, 1.15, '#8c7d6b', '#786958', '#635545');
+    box(ctx, -1.45, -0.65, 4.65, 0.52, 0.52, 0.09, '#9b8c7a', '#867664', '#6e5e4d');
+    polygon(ctx, [iso(-1.3, -0.5, 4.75), iso(-1.1, -0.5, 4.75), iso(-1.1, -0.3, 4.75), iso(-1.3, -0.3, 4.75)], '#241d16');
     // Porch, real footing blocks and front steps.
     for (let i = 0; i < 11; i++) box(ctx, -2.2 + i * .4, 1.8, .25, .38, 1.08, .1, '#bd9d70', '#a2855e', '#8f7758');
     for (const x of [-1.95, 1.95]) { box(ctx, x - .1, 2.58, -.04, .3, .3, .33, '#aba68c', '#97967e', '#858f7b'); box(ctx, x, 2.65, .33, .09, .09, 2.35, '#b09668', '#8c704a', '#785f40'); }
@@ -317,6 +321,176 @@ export class WorldEngine {
     items.push({ x: -1.4, y: 3.1, depth: 1.7, selection: { kind: 'water', name: 'Persediaan awal' }, hit: { x: -51, y: -68, w: 102, h: 80 }, draw: () => { const p = iso(-1.4, 3.1); ctx.save(); ctx.translate(p.x, p.y); this.drawSupplies(); ctx.restore(); } });
     items.push({ x: .55, y: 2.2, depth: 2.75, selection: { kind: 'radio', name: 'Radio darurat' }, hit: { x: -20, y: -50, w: 40, h: 54 }, draw: () => { const p = iso(.55, 2.2); ctx.save(); ctx.translate(p.x, p.y); this.drawRadio(); ctx.restore(); } });
     items.push({ x: -5.5, y: 1.5, depth: -4, selection: { kind: 'plot', name: 'Lahan pembangunan' }, hit: { x: -70, y: -25, w: 140, h: 75 }, draw: () => { const p = iso(-5.5, 1.5); if (this.labels) { ctx.save(); ctx.globalAlpha = .7; this.drawName('Lahan kosong', p.x, p.y - 2); ctx.restore(); } } });
+
+    // Chimney smoke rising from house roof
+    items.push({
+      x: -1.4, y: -1.6, depth: 1.15,
+      draw: () => {
+        const cp = iso(-1.4, -1.6, 4.8);
+        for (let i = 0; i < 5; i++) {
+          const age = ((time * 0.5 + i * 0.2) % 1);
+          const px = cp.x + age * 24 + Math.sin(time * 2 + i) * 6;
+          const py = cp.y - age * 46;
+          const r = 5 + age * 15;
+          ctx.save();
+          ctx.fillStyle = `rgba(235, 238, 230, ${(1 - age) * 0.26})`;
+          ctx.beginPath();
+          ctx.arc(px, py, r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+    });
+
+    // Rain barrel beside the porch
+    items.push({
+      x: 2.3, y: 1.9, depth: 4.2,
+      draw: () => {
+        const p = iso(2.3, 1.9);
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        box(ctx, -0.2, -0.2, 0, 0.4, 0.4, 0.75, '#84643f', '#6c5030', '#543d22');
+        for (const hz of [0.15, 0.58]) box(ctx, -0.21, -0.21, hz, 0.42, 0.42, 0.05, '#485563', '#36424e', '#26303a');
+        const wp = iso(0, 0, 0.76);
+        ctx.fillStyle = '#41666e';
+        ctx.beginPath();
+        ctx.ellipse(wp.x, wp.y, 7, 3.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        const ripR = 2 + (Math.sin(time * 3) + 1) * 2;
+        ctx.strokeStyle = 'rgba(180, 220, 230, 0.45)';
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.ellipse(wp.x, wp.y, ripR, ripR * 0.5, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        const tap = iso(0.2, 0, 0.28);
+        ctx.fillStyle = '#c9a456';
+        ctx.fillRect(tap.x, tap.y - 2, 4, 3);
+        ctx.restore();
+      }
+    });
+
+    // Clothesline (Jemuran pakaian penyintas)
+    items.push({
+      x: 3.2, y: 1.2, depth: 4.4,
+      selection: { kind: 'clothesline', name: 'Jemuran pakaian' },
+      hit: { x: -38, y: -65, w: 76, h: 70 },
+      draw: () => {
+        const p = iso(3.2, 1.2);
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        box(ctx, -0.55, -0.05, 0, 0.1, 0.1, 1.35, '#a48454', '#84673d', '#68502d');
+        box(ctx, 0.45, -0.05, 0, 0.1, 0.1, 1.35, '#a48454', '#84673d', '#68502d');
+        box(ctx, -0.65, -0.15, 1.3, 0.3, 0.3, 0.08, '#b29362', '#8c7044', '#705632');
+        box(ctx, 0.35, -0.15, 1.3, 0.3, 0.3, 0.08, '#b29362', '#8c7044', '#705632');
+        const ropeLeft = iso(-0.5, 0, 1.3), ropeMid = iso(0, 0, 1.22), ropeRight = iso(0.5, 0, 1.3);
+        ctx.strokeStyle = '#c5ba9e'; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(ropeLeft.x, ropeLeft.y); ctx.quadraticCurveTo(ropeMid.x, ropeMid.y, ropeRight.x, ropeRight.y); ctx.stroke();
+        const windSway = Math.sin(time * 3);
+        const c1 = iso(-0.3, 0, 1.27); ctx.save(); ctx.translate(c1.x, c1.y); ctx.rotate(windSway * 0.12);
+        roundRect(ctx, -7, 0, 14, 17, 2, '#dca34d', '#996a25');
+        path(ctx, [{ x: -7, y: 0 }, { x: -11, y: 8 }], '#c58d37', 3); path(ctx, [{ x: 7, y: 0 }, { x: 11, y: 8 }], '#c58d37', 3); ctx.restore();
+        const c2 = iso(0, 0, 1.24); ctx.save(); ctx.translate(c2.x, c2.y); ctx.rotate(Math.sin(time * 3 + 1) * 0.14);
+        roundRect(ctx, -6, 0, 12, 15, 2, '#4d8a76', '#316253'); ctx.restore();
+        const c3 = iso(0.28, 0, 1.27); ctx.save(); ctx.translate(c3.x, c3.y); ctx.rotate(Math.sin(time * 3 + 2) * 0.11);
+        roundRect(ctx, -8, 0, 16, 20, 2, '#f0ebd8', '#c4bc9f'); ctx.restore();
+        const bkt = iso(-0.5, 0.3, 0); roundRect(ctx, bkt.x - 5, bkt.y - 7, 10, 8, 2, '#7e909a', '#54636d');
+        if (this.labels) { ctx.save(); ctx.globalAlpha = 0.85; this.drawName('Jemuran', 0, -42); ctx.restore(); }
+        ctx.restore();
+      }
+    });
+
+    // Herb garden patch (Bedengan kebun & herba)
+    items.push({
+      x: -3.8, y: 0.5, depth: -3.3,
+      selection: { kind: 'garden', name: 'Bedengan herba' },
+      hit: { x: -38, y: -38, w: 76, h: 56 },
+      draw: () => {
+        const p = iso(-3.8, 0.5);
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        box(ctx, -0.65, -0.45, 0, 1.3, 0.9, 0.22, '#483525', '#362416', '#291b10');
+        box(ctx, -0.6, -0.4, 0.18, 1.2, 0.8, 0.04, '#2d1e13', '#23160c', '#1b1008');
+        for (let row = -0.25; row <= 0.25; row += 0.25) {
+          for (let col = -0.45; col <= 0.45; col += 0.22) {
+            const plantP = iso(col, row, 0.24);
+            const plantJitter = Math.sin(col * 7 + row * 11);
+            ctx.fillStyle = plantJitter > 0 ? '#588c42' : '#73a854';
+            ctx.beginPath(); ctx.arc(plantP.x, plantP.y - 2, 3.2, 0, Math.PI * 2); ctx.fill();
+            if (plantJitter > 0.3) { ctx.fillStyle = '#fce277'; ctx.fillRect(plantP.x - 1, plantP.y - 4, 2, 2); }
+          }
+        }
+        const stp = iso(0.5, -0.3, 0.24); ctx.fillStyle = '#d8bd8f'; ctx.fillRect(stp.x - 1, stp.y - 10, 2, 10);
+        ctx.fillStyle = '#8fad68'; ctx.beginPath(); ctx.arc(stp.x, stp.y - 11, 2.5, 0, Math.PI * 2); ctx.fill();
+        const wkp = iso(-0.6, 0.35, 0); roundRect(ctx, wkp.x - 4, wkp.y - 6, 8, 7, 2, '#7e929c', '#576771');
+        path(ctx, [{ x: wkp.x + 3, y: wkp.y - 3 }, { x: wkp.x + 7, y: wkp.y - 7 }], '#6c7f8a', 1.5);
+        if (this.labels) { ctx.save(); ctx.globalAlpha = 0.85; this.drawName('Kebun herba', 0, -28); ctx.restore(); }
+        ctx.restore();
+      }
+    });
+
+    // Campfire (Api unggun markas)
+    items.push({
+      x: 1.8, y: 3.6, depth: 5.4,
+      selection: { kind: 'campfire', name: 'Api Unggun Markas' },
+      hit: { x: -34, y: -42, w: 68, h: 56 },
+      draw: () => {
+        const p = iso(1.8, 3.6);
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        shadow(ctx, 0, 0, 22, 10, 0.22);
+        ctx.fillStyle = '#2b231d'; ctx.beginPath(); ctx.ellipse(0, 0, 16, 7.5, 0, 0, Math.PI * 2); ctx.fill();
+        for (let s = 0; s < 8; s++) {
+          const a = (s / 8) * Math.PI * 2;
+          ctx.fillStyle = ['#9e9b88', '#858372', '#b3b09d', '#787666'][s % 4];
+          ctx.beginPath(); ctx.ellipse(Math.cos(a) * 15, Math.sin(a) * 7, 3.6, 2.4, 0.1, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = '#5a584a'; ctx.lineWidth = 0.5; ctx.stroke();
+        }
+        for (let l = 0; l < 4; l++) {
+          const la = (l / 4) * Math.PI;
+          ctx.strokeStyle = l % 2 === 0 ? '#423120' : '#2b1f14'; ctx.lineWidth = 3.5;
+          ctx.beginPath(); ctx.moveTo(Math.cos(la) * -9, Math.sin(la) * -4.5); ctx.lineTo(Math.cos(la) * 9, Math.sin(la) * 4.5); ctx.stroke();
+        }
+        const fWave1 = Math.sin(time * 16) * 2, fWave2 = Math.cos(time * 22) * 1.8;
+        ctx.fillStyle = '#ff4a00'; ctx.beginPath(); ctx.moveTo(-9 + fWave2, 1); ctx.quadraticCurveTo(-11, -12 + fWave1, -1, -22 + fWave2); ctx.quadraticCurveTo(8, -13 + fWave2, 8 + fWave1, 1); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#ff9500'; ctx.beginPath(); ctx.moveTo(-6 + fWave1, 0); ctx.quadraticCurveTo(-7, -9 + fWave2, 0, -18 + fWave1); ctx.quadraticCurveTo(6, -9 + fWave1, 6 + fWave2, 0); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#ffea6c'; ctx.beginPath(); ctx.moveTo(-3, 0); ctx.quadraticCurveTo(-3, -6, 0, -11 + fWave2); ctx.quadraticCurveTo(3, -6, 3, 0); ctx.closePath(); ctx.fill();
+        for (let e = 0; e < 5; e++) {
+          const eAge = (time * 1.6 + e * 0.23) % 1;
+          ctx.fillStyle = `rgba(255, ${Math.floor(160 + eAge * 85)}, 50, ${1 - eAge})`;
+          ctx.fillRect(Math.sin(time * 4 + e * 2.8) * 7 - 1, -6 - eAge * 28, 2, 2);
+        }
+        for (let sm = 0; sm < 3; sm++) {
+          const smAge = (time * 0.65 + sm * 0.33) % 1;
+          ctx.fillStyle = `rgba(180, 185, 175, ${(1 - smAge) * 0.16})`;
+          ctx.beginPath(); ctx.arc(Math.sin(time * 2 + sm) * 6, -22 - smAge * 30, 4 + smAge * 8, 0, Math.PI * 2); ctx.fill();
+        }
+        box(ctx, -0.4, 0.45, 0, 0.8, 0.28, 0.22, '#967648', '#7b5e34', '#604724');
+        box(ctx, 0.45, -0.4, 0, 0.28, 0.8, 0.22, '#967648', '#7b5e34', '#604724');
+        if (this.labels) { ctx.save(); ctx.globalAlpha = 0.85; this.drawName('Api unggun', 0, -32); ctx.restore(); }
+        ctx.restore();
+      }
+    });
+
+    // Drifting leaves across the clearing
+    for (let i = 0; i < 6; i++) {
+      const lx = ((time * 0.85 + i * 3.6) % 20) - 10;
+      const ly = ((time * 0.45 + i * 2.2) % 20) - 10;
+      const lz = 0.15 + Math.sin(time * 2.4 + i) * 0.12;
+      items.push({
+        x: lx, y: ly, depth: lx + ly,
+        draw: () => {
+          const lp = iso(lx, ly, lz);
+          ctx.save();
+          ctx.translate(lp.x, lp.y);
+          ctx.rotate(time * 1.8 + i * 1.6);
+          ctx.fillStyle = ['#8ea862', '#c6a250', '#a8783d', '#719254'][i % 4];
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 3.5, 1.8, 0.25, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      });
+    }
     // A sparse old agricultural fence in the background. It does not enclose the settlement.
     for (let x = -6; x <= 6; x += 2) { const p = iso(x, -6.7); items.push({ x, y: -6.7, depth: x - 6.7, draw: () => { ctx.save(); ctx.translate(p.x, p.y); box(ctx, -.05, -.05, 0, .1, .1, 1.05, '#a28b60', '#8e7750', '#776446'); for (const z of [.35, .72]) path(ctx, [iso(0, 0, z), iso(1.8, 0, z - .12)], '#a0a68c', 1); ctx.restore(); } }); }
     const fenceLevel = this.game?.camp.fenceLevel || 0;
@@ -488,12 +662,67 @@ export class WorldEngine {
     for (const item of items) {
       const p = iso(item.x, item.y); const sx = ox + p.x * this.zoom, sy = oy + p.y * this.zoom;
       if (sx < -420 * this.zoom || sx > this.width + 420 * this.zoom || sy < -360 * this.zoom || sy > this.height + 360 * this.zoom) continue;
-      if(item.selection&&this.hovered===`${item.selection.kind}:${item.selection.id||item.selection.name}`){ctx.strokeStyle='#ebcc7eaa';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(p.x,p.y+4,item.selection.kind==='house'?105:item.selection.kind==='fence'?55:28,item.selection.kind==='house'?37:item.selection.kind==='fence'?20:11,0,0,Math.PI*2);ctx.stroke();}
+      if(item.selection&&this.hovered===`${item.selection.kind}:${item.selection.id||item.selection.name}`){
+        ctx.strokeStyle='#ebcc7eaa';ctx.lineWidth=2;ctx.beginPath();
+        const ew = item.selection.kind === 'house' ? 105 : item.selection.kind === 'fence' ? 55 : (item.selection.kind === 'garden' ? 42 : (item.selection.kind === 'campfire' ? 36 : 28));
+        const eh = item.selection.kind === 'house' ? 37 : item.selection.kind === 'fence' ? 20 : (item.selection.kind === 'garden' ? 20 : (item.selection.kind === 'campfire' ? 16 : 11));
+        ctx.ellipse(p.x,p.y+4,ew,eh,0,0,Math.PI*2);ctx.stroke();
+      }
       item.draw(); if (item.selection && item.hit) { const h = item.hit; this.hits.push({ selection: item.selection, x: sx + h.x * this.zoom - 6, y: sy + h.y * this.zoom - 6, w: h.w * this.zoom + 12, h: h.h * this.zoom + 12 }); }
     }
     const light=worldLight(this.worldEpoch+performance.now()-this.worldMono);
     ctx.save();ctx.setTransform(this.dpr,0,0,this.dpr,0,0);ctx.fillStyle=light.tint;ctx.fillRect(0,0,this.width,this.height);ctx.restore();
-    if(light.lamps>.001){for(const point of [{x:1.3,y:1.2,z:.7},{x:-1.4,y:3.1,z:.6}]){const p=iso(point.x,point.y,point.z);ctx.save();ctx.globalAlpha=light.lamps;const glow=ctx.createRadialGradient(p.x,p.y,1,p.x,p.y,65);glow.addColorStop(0,'#ffdc9c80');glow.addColorStop(1,'#ffce7000');ctx.fillStyle=glow;ctx.fillRect(p.x-65,p.y-65,130,130);roundRect(ctx,p.x-3,p.y-5,6,9,2,'#ffdf9b');ctx.restore();}}
+    if(light.lamps>.001){
+      const lampPoints = [
+        { x: 1.3, y: 1.2, z: 0.7, r: 65, c0: '#ffdc9c80', c1: '#ffce7000', lamp: true },
+        { x: -1.4, y: 3.1, z: 0.6, r: 65, c0: '#ffdc9c80', c1: '#ffce7000', lamp: true },
+        { x: 1.8, y: 3.6, z: 0.3, r: 85, c0: '#ff983890', c1: '#ff620000', lamp: false },
+        ...(fenceLevel > 0 ? [{ x: 1.75, y: 6.7, z: 1.95, r: 55, c0: '#ffe08a85', c1: '#ffbe5500', lamp: false }] : [])
+      ];
+      for(const point of lampPoints){
+        const p=iso(point.x,point.y,point.z);
+        ctx.save();
+        ctx.globalAlpha=light.lamps;
+        const glow=ctx.createRadialGradient(p.x,p.y,1,p.x,p.y,point.r);
+        glow.addColorStop(0,point.c0);
+        glow.addColorStop(1,point.c1);
+        ctx.fillStyle=glow;
+        ctx.fillRect(p.x-point.r,p.y-point.r,point.r*2,point.r*2);
+        if (point.lamp) roundRect(ctx,p.x-3,p.y-5,6,9,2,'#ffdf9b');
+        ctx.restore();
+      }
+    }
+    if(light.lamps > 0.04){
+      const fireflies = [
+        { bx: -4.2, by: -0.8, seed: 1.2 },
+        { bx: -3.4, by: 1.6, seed: 2.7 },
+        { bx: 3.6, by: -0.8, seed: 3.5 },
+        { bx: 4.4, by: 1.5, seed: 4.9 },
+        { bx: -1.2, by: 4.4, seed: 5.3 },
+        { bx: 2.8, by: 4.2, seed: 6.8 },
+        { bx: -5.6, by: 2.2, seed: 7.4 },
+      ];
+      ctx.save();
+      for(const ff of fireflies){
+        const fx = ff.bx + Math.sin(time * 1.2 + ff.seed * 3.7) * 0.65;
+        const fy = ff.by + Math.cos(time * 0.95 + ff.seed * 2.3) * 0.65;
+        const fz = 0.35 + Math.sin(time * 2.2 + ff.seed) * 0.28;
+        const pulse = (Math.sin(time * 3.2 + ff.seed * 4.1) + 1) * 0.5;
+        if (pulse > 0.12) {
+          const fp = iso(fx, fy, fz);
+          ctx.globalAlpha = Math.min(1, light.lamps * 1.3) * pulse;
+          ctx.fillStyle = '#b7ff47';
+          ctx.beginPath();
+          ctx.arc(fp.x, fp.y, 2.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = 'rgba(215, 255, 120, 0.25)';
+          ctx.beginPath();
+          ctx.arc(fp.x, fp.y, 5.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
     const own = active.find(s => s.id === this.ownId);
     if (this.labels && own) { const p = this.actorPosition(own, time), v = iso(p.x, p.y); this.drawName(own.name, v.x, v.y - 78, true); }
     this.finished=this.finished.filter(f=>performance.now()-f.at<2000);for(const f of this.finished){const p=iso(f.x,f.y),age=(performance.now()-f.at)/2000;ctx.save();ctx.globalAlpha=1-age;this.drawName('Selesai',p.x,p.y-95-age*25);ctx.restore();}
