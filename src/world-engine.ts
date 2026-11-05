@@ -260,12 +260,24 @@ export class WorldEngine {
       if(Math.abs(sx)+Math.abs(sy)>.001)m.facing=Math.abs(sx)>Math.abs(sy)*1.3?(sx<0?'left':'right'):(sy<0?'back':'front');
     }
     const now=Date.now()+this.serverOffset,fence=!!this.game?.camp.fenceLevel;
-    const job=this.actorJob(s.id),startingArga=s.id==='arga'&&!!job&&m.lastJob!==job.id;
+    const job=this.actorJob(s.id),startingCombat=(s.id==='arga'||job?.id.startsWith('idle-defense:'))&&!!job&&m.lastJob!==job.id;
     const patient=!job?this.game?.jobs.find(j=>j.kind==='heal'&&j.targetId===s.id&&j.endsAt>now):undefined;
     const spots:Record<string,[number,number]>={chop:[-6,.5],loot:[5,3.4],guard:[2,-5.7],attack:[-5.2,-7.5],forage:[-4,5.5],craft:[-3.9,2.8],bandage:[-2.5,4.2],build:[-5.5,1.5],repair:[3,.2],heal:[-1,4.5],rest:[1,2.3],eat:[-1.6,3.6]};
     const idleSpots=[{x:-4.5,y:3.8},{x:-4.5,y:-4.4},{x:4.3,y:-4.4},{x:4.8,y:4.1},spawn];
     let goal:WorldPoint|undefined,key='';
-    if(job){const base=s.id==='arga'?[-3.5,-6.9]:spots[job.kind],n=job.members.findIndex(member=>member.id===s.id);goal={x:base[0]+(n%2)*.65,y:base[1]+Math.floor(n/2)*.65};
+    if(job){
+      const base=s.id==='arga'?[-3.5,-6.9]:spots[job.kind],n=job.members.findIndex(member=>member.id===s.id);
+      if(job.kind==='attack'){
+        if(s.id==='arga'){goal={x:-3.5,y:-6.9};}
+        else{
+          const col=n%9,row=Math.floor(n/9);
+          const x=col===0?-4.4:-2.6+(col-1)*.8;
+          const y=(row===0?-7.0:-7.4)-(col%2)*.15;
+          goal={x,y};
+        }
+      }else{
+        goal={x:base[0]+(n%2)*.65,y:base[1]+Math.floor(n/2)*.65};
+      }
       if(job.kind==='heal'&&job.targetId&&job.targetId!==s.id){const target=this.motions.get(job.targetId);if(target){goal={x:target.x-.7,y:target.y+.5};}}
       key='job:'+job.id+':'+Math.round(goal.x*2)+':'+Math.round(goal.y*2)+':'+fence;m.lastJob=job.id;
     }else if(patient){goal={x:m.x,y:m.y};key='patient:'+patient.id;}
@@ -273,11 +285,18 @@ export class WorldEngine {
     else if(t>=m.pauseUntil){goal=s.activity==='istirahat'?{x:1.4,y:2.4}:idleSpots[m.idle%idleSpots.length];key='idle:'+m.idle+':'+fence;}
     if(goal&&key!==m.key){if(!walkable(goal,fence)){const nearby=[{x:goal.x+.5,y:goal.y},{x:goal.x-.5,y:goal.y},{x:goal.x,y:goal.y+.5}].find(p=>walkable(p,fence));goal=nearby;}
       m.route=goal?findRoute({x:m.x,y:m.y},goal,fence):[];m.distance=0;m.key=key;
-      if((fresh||startingArga)&&job&&m.route.length){m.distance=Math.min(routeDistance(m.route),Math.max(0,(now-job.startedAt)/1000)*1.75);const p=followRoute(m.route,m.distance);m.x=p.x;m.y=p.y;}
+      if((fresh||startingCombat)&&job&&m.route.length){m.distance=Math.min(routeDistance(m.route),Math.max(0,(now-job.startedAt)/1000)*1.75);const p=followRoute(m.route,m.distance);m.x=p.x;m.y=p.y;}
     }
     const length=routeDistance(m.route);m.walking=m.distance<length-.01;m.working=false;
     if(m.walking){m.mode=!job&&m.lastJob?'return':'walk';
-    }else if(job){m.mode='work';m.working=true;const focus:Record<string,WorldPoint>={chop:{x:-6.7,y:.3},loot:{x:5.5,y:2.7},guard:{x:2,y:-7.4},attack:{x:2.5,y:-7.8},build:{x:-6.5,y:1.5},repair:{x:2,y:.2},craft:{x:-3,y:2.8}};const f=job.kind==='attack'?zombiePosition(0,!!this.game?.camp.raidDeadline):focus[job.kind];if(f){const dx=(f.x-m.x)-(f.y-m.y),dy=(f.x-m.x)+(f.y-m.y);m.facing=Math.abs(dx)>Math.abs(dy)*.7?(dx<0?'left':'right'):(dy<0?'back':'front');}else m.facing='front';
+    }else if(job){
+      m.mode='work';m.working=true;
+      const focus:Record<string,WorldPoint>={chop:{x:-6.7,y:.3},loot:{x:5.5,y:2.7},guard:{x:2,y:-7.4},attack:{x:2.5,y:-7.8},build:{x:-6.5,y:1.5},repair:{x:2,y:.2},craft:{x:-3,y:2.8}};
+      const zCount=this.game?visibleZombieCount(this.game.camp.enemyHp):0;
+      const memIdx=job.members.findIndex(member=>member.id===s.id);
+      const zIdx=zCount>0?Math.min(Math.max(0,memIdx>=0?memIdx:0),zCount-1):0;
+      const f=job.kind==='attack'?zombiePosition(zIdx,!!this.game?.camp.raidDeadline):focus[job.kind];
+      if(f){const dx=(f.x-m.x)-(f.y-m.y),dy=(f.x-m.x)+(f.y-m.y);m.facing=Math.abs(dx)>Math.abs(dy)*.7?(dx<0?'left':'right'):(dy<0?'back':'front');}else m.facing='front';
     }else{m.mode='idle';if(m.key.startsWith('return:')){m.lastJob='';m.pauseUntil=t+3;m.key='pause';}else if(m.key.startsWith('idle:')){m.idle++;m.pauseUntil=t+2+phase*4;m.key='pause';}}
     return{x:m.x,y:m.y,walking:m.walking,heading:m.heading,phase,facing:m.facing,working:m.working,mode:m.mode};
   }

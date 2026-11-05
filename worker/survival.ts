@@ -6,6 +6,7 @@ type Row = { user_id: string; id: string; name: string; role: string; appearance
 const reply = (data: unknown, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 
 // Keep the same eligibility and order for combat and the public patrol list.
+// More survivors means more idle defenders step up to help Arga against the growing zombie horde.
 const idleDefenders = `
   SELECT s.id, s.name, s.role
   FROM survivors s JOIN game_players p ON p.user_id = s.user_id
@@ -13,7 +14,7 @@ const idleDefenders = `
     AND NOT EXISTS (SELECT 1 FROM job_members m WHERE m.user_id = s.user_id AND m.active = 1)
     AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.target_id = s.user_id AND j.kind = 'heal' AND j.status = 'active')
   ORDER BY CASE WHEN s.role = 'penjaga' THEN 0 ELSE 1 END, s.created_at, s.id
-  LIMIT 2
+  LIMIT (SELECT MIN(12, 2 + CAST((SELECT COUNT(*) FROM survivors)/3 AS INTEGER)))
 `;
 
 export async function tick(db: DB, now = Date.now()) {
